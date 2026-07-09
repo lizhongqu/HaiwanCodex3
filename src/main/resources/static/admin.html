@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Codex Admin 调试面板</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/dist/index.css" />
+    <script src="https://cdn.jsdelivr.net/npm/element-plus/dist/index.full.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            background-color: #f5f7fa;
+            margin: 0;
+            padding: 12px 0;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 12px;
+        }
+        .card-margin {
+            margin-bottom: 16px;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-size: 12px;
+            line-height: 1.5;
+            margin: 0;
+            background: #fafafa;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .tree-pre {
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        .stat-card {
+            text-align: center;
+            padding: 12px 0;
+        }
+        .stat-num {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .stat-label {
+            font-size: 13px;
+            color: #666;
+        }
+        .tag-click {
+            cursor: pointer;
+        }
+        .btn-group {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+<div id="app" class="container">
+    <h2 style="margin:8px 0 16px 0;">Codex 会话&索引&用量调试后台</h2>
+
+    <!-- 基础配置区 -->
+    <el-card class="card-margin" shadow="hover">
+        <el-row :gutter="20" align="middle">
+            <el-col span="10">
+                <el-input v-model="base.wsId" placeholder="输入 workspaceId" clearable></el-input>
+            </el-col>
+            <el-col span="10">
+                <el-input v-model="base.wsRoot" placeholder="工作区根目录路径" clearable></el-input>
+            </el-col>
+            <el-col span="4">
+                <el-button type="primary" :loading="loading.loadWs" @click="loadAllIndexWs">加载全部缓存WS</el-button>
+            </el-col>
+        </el-row>
+        <el-row style="margin-top:10px" v-if="allWsList.length">
+            <el-tag v-for="item in allWsList" :key="item" class="tag-click" @click="base.wsId=item" style="margin:4px">
+                {{ item }}
+            </el-tag>
+        </el-row>
+    </el-card>
+
+    <!-- 用量统计模块（新增） -->
+    <el-card title="用量统计面板" class="card-margin" shadow="hover">
+        <el-space class="btn-group">
+            <el-button type="primary" :loading="loading.statGlobal" @click="getGlobalStat">全局总统计</el-button>
+            <el-button type="success" :loading="loading.statWs" @click="getWsStat">当前工作区统计</el-button>
+        </el-space>
+        <el-row :gutter="16" v-if="statData.show">
+            <el-col span="4" xs="12">
+                <div class="stat-card">
+                    <div class="stat-num" style="color:#409EFF">{{ statData.chatCount }}</div>
+                    <div class="stat-label">会话总次数</div>
+                </div>
+            </el-col>
+            <el-col span="4" xs="12">
+                <div class="stat-card">
+                    <div class="stat-num" style="color:#67C23A">{{ statData.fileRead }}</div>
+                    <div class="stat-label">文件读取次数</div>
+                </div>
+            </el-col>
+            <el-col span="4" xs="12">
+                <div class="stat-card">
+                    <div class="stat-num" style="color:#E6A23C">{{ statData.inputToken }}</div>
+                    <div class="stat-label">输入Token</div>
+                </div>
+            </el-col>
+            <el-col span="4" xs="12">
+                <div class="stat-card">
+                    <div class="stat-num" style="color:#F56C6C">{{ statData.outputToken }}</div>
+                    <div class="stat-label">输出Token</div>
+                </div>
+            </el-col>
+            <el-col span="4" xs="12">
+                <div class="stat-card">
+                    <div class="stat-num" style="color:#9B59B6">{{ statData.totalToken }}</div>
+                    <div class="stat-label">合计总Token</div>
+                </div>
+            </el-col>
+        </el-row>
+        <el-empty v-else description="点击按钮加载统计数据"></el-empty>
+    </el-card>
+
+    <el-row :gutter="16">
+        <!-- 左侧：会话管理 -->
+        <el-col span="12" xs="24">
+            <el-card title="会话历史管理" class="card-margin" shadow="hover">
+                <el-space class="btn-group">
+                    <el-button type="primary" :loading="loading.chat" @click="getChatHistory">查看对话历史</el-button>
+                    <el-button type="danger" :loading="loading.clearChat" @click="clearChatHistory">清空当前会话</el-button>
+                    <el-button @click="copyChatHistory" v-if="chatHistory.length">复制会话</el-button>
+                </el-space>
+                <el-divider></el-divider>
+                <el-scrollbar height="400px">
+                    <pre v-if="chatHistory.length">{{ JSON.stringify(chatHistory, null, 2) }}</pre>
+                    <el-empty v-else description="暂无对话数据"></el-empty>
+                </el-scrollbar>
+            </el-card>
+        </el-col>
+
+        <!-- 右侧：项目索引查看 -->
+        <el-col span="12" xs="24">
+            <el-card title="项目目录树缓存(仅文件夹)" class="card-margin" shadow="hover">
+                <el-space class="btn-group">
+                    <el-button type="primary" :loading="loading.tree" @click="getTree">加载目录树</el-button>
+                    <el-button @click="copyTree" v-if="treeText">复制目录</el-button>
+                </el-space>
+                <el-divider></el-divider>
+                <el-scrollbar height="220px">
+                    <pre class="tree-pre" v-if="treeText">{{ treeText }}</pre>
+                    <el-empty v-else description="无目录缓存"></el-empty>
+                </el-scrollbar>
+            </el-card>
+
+            <el-card title="类名-路径映射" class="card-margin" shadow="hover">
+                <el-space class="btn-group">
+                    <el-button type="primary" :loading="loading.classMap" @click="getClassMap">加载类映射</el-button>
+                    <el-button @click="copyClassMap" v-if="Object.keys(classMap).length">复制映射</el-button>
+                </el-space>
+                <el-divider></el-divider>
+                <el-scrollbar height="220px">
+                    <pre v-if="Object.keys(classMap).length">{{ JSON.stringify(classMap, null, 2) }}</pre>
+                    <el-empty v-else description="无类映射缓存"></el-empty>
+                </el-scrollbar>
+            </el-card>
+        </el-col>
+    </el-row>
+
+    <!-- 索引操作区 -->
+    <el-card title="索引操作" class="card-margin" shadow="hover">
+        <el-space>
+            <el-button type="success" :loading="loading.rebuildIndex" @click="rebuildIndex">手动重建索引</el-button>
+            <el-button type="danger" :loading="loading.clearIndex" @click="clearIndex">清空当前WS索引缓存</el-button>
+        </el-space>
+    </el-card>
+</div>
+
+<script>
+    const { createApp, ref, reactive } = Vue;
+    const { ElMessage, ElCard, ElButton, ElInput, ElRow, ElCol, ElSpace, ElDivider, ElScrollbar, ElEmpty, ElTag } = ElementPlus;
+
+    // 统一axios基础配置
+    axios.defaults.baseURL = "/admin/codex";
+    axios.interceptors.response.use(res => res, err => {
+        const msg = err.response?.data?.message || err.message || "接口请求异常";
+        ElMessage.error(msg);
+        return Promise.reject(err);
+    });
+
+    const app = createApp({
+        setup() {
+            // 基础参数
+            const base = reactive({
+                wsId: "HaiwanCodex3",
+                wsRoot: "D:/ideaSpace"
+            });
+
+            // 全局加载状态锁，防止重复点击
+            const loading = reactive({
+                loadWs: false,
+                chat: false,
+                clearChat: false,
+                tree: false,
+                classMap: false,
+                rebuildIndex: false,
+                clearIndex: false,
+                statGlobal: false,
+                statWs: false
+            });
+
+            // 页面数据
+            const allWsList = ref([]);
+            const chatHistory = ref([]);
+            const treeText = ref("");
+            const classMap = ref({});
+            // 统计数据
+            const statData = reactive({
+                show: false,
+                chatCount: 0,
+                fileRead: 0,
+                inputToken: 0,
+                outputToken: 0,
+                totalToken: 0
+            });
+
+            // 复制文本公共方法
+            const copyText = async (text) => {
+                if (!text) return ElMessage.warning("无内容可复制");
+                await navigator.clipboard.writeText(typeof text === 'string' ? text : JSON.stringify(text, null, 2));
+                ElMessage.success("复制成功");
+            };
+            const copyChatHistory = () => copyText(chatHistory.value);
+            const copyTree = () => copyText(treeText.value);
+            const copyClassMap = () => copyText(classMap.value);
+
+            // 加载所有WS列表
+            const loadAllIndexWs = async () => {
+                loading.loadWs = true;
+                try {
+                    const res = await axios.get("/index/all-ws");
+                    allWsList.value = res.data || [];
+                    ElMessage.success("加载WS列表成功");
+                } finally {
+                    loading.loadWs = false;
+                }
+            };
+
+            // 查看会话历史
+            const getChatHistory = async () => {
+                if (!base.wsId) return ElMessage.warning("请输入 workspaceId");
+                loading.chat = true;
+                try {
+                    const res = await axios.get(`/chat/history/${base.wsId}`);
+                    chatHistory.value = res.data;
+                    ElMessage.success("加载对话成功");
+                } finally {
+                    loading.chat = false;
+                }
+            };
+
+            // 清空会话
+            const clearChatHistory = async () => {
+                if (!base.wsId) return ElMessage.warning("请输入 workspaceId");
+                loading.clearChat = true;
+                try {
+                    await axios.delete(`/chat/${base.wsId}`);
+                    chatHistory.value = [];
+                    ElMessage.success("会话已清空");
+                } finally {
+                    loading.clearChat = false;
+                }
+            };
+
+            // 获取目录树
+            const getTree = async () => {
+                if (!base.wsId) return ElMessage.warning("请输入 workspaceId");
+                loading.tree = true;
+                try {
+                    const res = await axios.get(`/index/tree/${base.wsId}`);
+                    treeText.value = res.data || "无缓存";
+                } finally {
+                    loading.tree = false;
+                }
+            };
+
+            // 获取类映射
+            const getClassMap = async () => {
+                if (!base.wsId) return ElMessage.warning("请输入 workspaceId");
+                loading.classMap = true;
+                try {
+                    const res = await axios.get(`/index/class-map/${base.wsId}`);
+                    classMap.value = res.data || {};
+                } finally {
+                    loading.classMap = false;
+                }
+            };
+
+            // 重建索引
+            const rebuildIndex = async () => {
+                if (!base.wsId || !base.wsRoot) return ElMessage.warning("填写完整WS信息");
+                loading.rebuildIndex = true;
+                try {
+                    await axios.post("/index/rebuild", {
+                        workspaceId: base.wsId,
+                        workspaceRoot: base.wsRoot
+                    });
+                    ElMessage.success("重建索引完成");
+                    getTree();
+                    getClassMap();
+                } finally {
+                    loading.rebuildIndex = false;
+                }
+            };
+
+            // 清空索引缓存
+            const clearIndex = async () => {
+                if (!base.wsId) return ElMessage.warning("请输入 workspaceId");
+                loading.clearIndex = true;
+                try {
+                    await axios.delete(`/index/${base.wsId}`);
+                    treeText.value = "";
+                    classMap.value = {};
+                    ElMessage.success("索引缓存已清空");
+                } finally {
+                    loading.clearIndex = false;
+                }
+            };
+
+            // 加载全局统计
+            const getGlobalStat = async () => {
+                loading.statGlobal = true;
+                try {
+                    const res = await axios.get("/stat/global");
+                    fillStat(res.data);
+                    ElMessage.success("全局统计加载完成");
+                } finally {
+                    loading.statGlobal = false;
+                }
+            };
+
+            // 加载当前工作区统计
+            const getWsStat = async () => {
+                if (!base.wsId) return ElMessage.warning("请输入 workspaceId");
+                loading.statWs = true;
+                try {
+                    const res = await axios.get(`/stat/ws/${base.wsId}`);
+                    fillStat(res.data);
+                    ElMessage.success("工作区统计加载完成");
+                } finally {
+                    loading.statWs = false;
+                }
+            };
+
+            // 填充统计卡片数据
+            const fillStat = (data) => {
+                statData.show = true;
+                statData.chatCount = data.chatCount || 0;
+                statData.fileRead = data.fileRead || 0;
+                statData.inputToken = data.inputToken || 0;
+                statData.outputToken = data.outputToken || 0;
+                statData.totalToken = data.totalToken || 0;
+            };
+
+            return {
+                base, loading, allWsList, chatHistory, treeText, classMap, statData,
+                loadAllIndexWs, getChatHistory, clearChatHistory,
+                getTree, getClassMap, rebuildIndex, clearIndex,
+                copyChatHistory, copyTree, copyClassMap,
+                getGlobalStat, getWsStat
+            };
+        }
+    });
+    app.use(ElementPlus);
+    app.mount("#app");
+</script>
+</body>
+</html>

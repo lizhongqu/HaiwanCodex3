@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Codex Chat 新版分栏布局</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/dist/index.css">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            height: 100vh;
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f0f2f5;
+            overflow: hidden;
+        }
+        #app {
+            height: 100vh;
+            display: flex;
+        }
+
+        /* 左侧配置侧边栏 */
+        .left-sidebar {
+            width: 280px;
+            background: #fff;
+            border-right: 1px solid #e4e7ed;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+        .sidebar-title {
+            font-size: 16px;
+            font-weight: 600;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+            color: #303133;
+        }
+        .param-block {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .param-label {
+            font-size: 13px;
+            color: #606266;
+        }
+        .token-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            border: 1px solid #e9ecef;
+        }
+        .token-item {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            padding: 4px 0;
+        }
+        .token-total {
+            margin-top: 8px;
+            font-weight: 600;
+            color: #409eff;
+        }
+        .sidebar-btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* 右侧主窗口 */
+        .main-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .main-header {
+            padding: 12px 20px;
+            background: #fff;
+            border-bottom: 1px solid #e4e7ed;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        /* 聊天消息区域 */
+        .chat-scroll {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .empty-tip {
+            text-align: center;
+            color: #909399;
+            margin-top: 120px;
+        }
+        .message-item {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 24px;
+            animation: fadeIn .3s ease;
+        }
+        .message-item.user {
+            align-items: flex-end;
+        }
+        .message-item.assistant {
+            align-items: flex-start;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .message-row {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 10px;
+        }
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+        .assistant .avatar {
+            background: #67c23a;
+            color: #fff;
+            margin-right: 12px;
+        }
+        .user .avatar {
+            background: #409eff;
+            color: #fff;
+            margin-left: 12px;
+            order: 2;
+        }
+        .bubble {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 8px;
+            line-height: 1.6;
+            font-size: 14px;
+            white-space: pre-wrap;
+        }
+        .assistant .bubble {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-top-left-radius: 0;
+            color: #303133;
+        }
+        .user .bubble {
+            background: #409eff;
+            color: #fff;
+            border-top-right-radius: 0;
+        }
+
+        /* 统一多文件Diff面板样式【新增缺失样式】 */
+        .diff-wrap {
+            width: 92%;
+            border: 1px solid #dcdfe6;
+            border-radius: 10px;
+            background: #ffffff;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .diff-top-bar {
+            padding: 10px 16px;
+            background: #f5f7fa;
+            border-bottom: 1px solid #e4e7ed;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .diff-col-title {
+            width: 50%;
+            text-align: center;
+            margin: 0;
+            font-size: 14px;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .title-old {
+            background: #ffebee60;
+            color: #c0392b;
+        }
+        .title-new {
+            background: #e8f5e960;
+            color: #27ae60;
+        }
+        .diff-two-col {
+            display: flex;
+            width: 100%;
+        }
+        .diff-col {
+            width: 50%;
+        }
+        .diff-old-code {
+            background: #ffebee;
+            margin: 0;
+            padding: 12px;
+            min-height: 80px;
+            white-space: pre-wrap;
+            font-family: Consolas, Menlo, monospace;
+            font-size: 13px;
+            color: #b71c1c;
+        }
+        .diff-new-code {
+            background: #e8f5e9;
+            margin: 0;
+            padding: 12px;
+            min-height: 80px;
+            white-space: pre-wrap;
+            font-family: Consolas, Menlo, monospace;
+            font-size: 13px;
+            color: #1b5e20;
+        }
+        .diff-item-wrap {
+            padding: 14px 16px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .diff-check-line {
+            margin-bottom: 10px;
+        }
+
+        /* 底部高输入框区域 */
+        .input-footer {
+            padding: 16px 20px;
+            background: #fff;
+            border-top: 1px solid #e4e7ed;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .textarea-box {
+            width: 100%;
+        }
+        .send-tip {
+            font-size: 12px;
+            color: #909399;
+        }
+
+        /* 工具调用卡片 */
+        .tool-call-card {
+            margin: 12px 0;
+            padding: 10px 14px;
+            background: #fff8e1;
+            border: 1px solid #ffecb3;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: #f57c00;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .tool-spinner {
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <!-- 左侧配置侧边栏 -->
+    <div class="left-sidebar">
+        <div>
+            <div class="sidebar-title">项目配置</div>
+            <div class="param-block" style="margin-top:12px;">
+                <label class="param-label">工作区 ID</label>
+                <el-input v-model="workspaceId" placeholder="输入WorkspaceID" clearable></el-input>
+            </div>
+            <div class="sidebar-btn-group" style="margin-top:12px;">
+                <el-button block plain @click="loadHistory" :icon="History">加载对话历史</el-button>
+                <el-button block plain type="danger" @click="clearHistory" :icon="Delete">清空全部对话</el-button>
+                <div style="margin-top:16px;border-top:1px solid #eee;padding-top:12px;">
+                    <div class="sidebar-title">本地Diff预览</div>
+                    <el-button block type="primary" @click="mockDiffPanel">一键弹出Diff对比面板</el-button>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <div class="sidebar-title">模型参数</div>
+            <div class="param-block" style="margin-top:12px;">
+                <label class="param-label">Temperature {{temperature}}</label>
+                <el-slider v-model="temperature" :min="0" :max="1" :step="0.1" @change="v=>temperature.value=Number(v)"></el-slider>
+            </div>
+            <div class="param-block">
+                <label class="param-label">Top P {{topP}}</label>
+                <el-slider v-model="topP" :min="0" :max="1" :step="0.1" @change="v=>topP.value=Number(v)"></el-slider>
+            </div>
+            <div class="param-block">
+                <label class="param-label">上下文长度</label>
+                <el-input-number
+                        v-model="numCtx"
+                        :min="512"
+                        :max="32768"
+                        :step="512"
+                        style="width:100%;"
+                        @change="val => numCtx = Math.min(Math.max(val,512),32768)"
+                ></el-input-number>
+            </div>
+        </div>
+
+        <!-- Token统计面板 -->
+        <div>
+            <div class="sidebar-title" style="display:flex;justify-content:space-between;align-items:center;">
+                <span>本次对话Token统计</span>
+                <div style="display:flex;gap:4px;">
+                    <el-button size="small" @click="refreshTokenStat" :icon="Promotion">刷新</el-button>
+                    <el-button size="small" type="danger" @click="clearWsStat">清空</el-button>
+                </div>
+            </div>
+            <div class="token-card">
+                <div class="token-item">
+                    <span>输入Token</span>
+                    <span>{{tokenIn}}</span>
+                </div>
+                <div class="token-item">
+                    <span>输出Token</span>
+                    <span>{{tokenOut}}</span>
+                </div>
+                <div class="token-item token-total">
+                    <span>总消耗</span>
+                    <span>{{tokenTotal}}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧主区域 -->
+    <div class="main-wrap">
+        <div class="main-header">🤖 AI Codex Chat</div>
+
+        <!-- 聊天消息滚动区 -->
+        <div class="chat-scroll" ref="scrollbarRef">
+            <div v-if="messages.length === 0" class="empty-tip">
+                <el-icon size="48"><ChatDotRound /></el-icon>
+                <p>输入指令开始对话（Shift+Enter发送）</p>
+            </div>
+
+            <div v-for="(msg, idx) in messages" :key="idx" class="message-item" :class="msg.role">
+                <div class="message-row">
+                    <div class="avatar">
+                        <el-icon v-if="msg.role === 'user'"><User /></el-icon>
+                        <el-icon v-else><Monitor /></el-icon>
+                    </div>
+                    <div class="bubble">{{ msg.content }}</div>
+                </div>
+
+                <!-- 统一多文件Diff面板 -->
+                <div v-if="msg.allDiff && msg.allDiff.fileDiffList.length">
+                    <div v-for="fileDiff in msg.allDiff.fileDiffList" :key="fileDiff.filePath" class="diff-wrap">
+                        <div class="diff-top-bar">
+                            <div>
+                                <el-button size="small" @click="selectAllFile(fileDiff)">全选本文件</el-button>
+                                <el-button size="small" @click="unselectAllFile(fileDiff)">取消本文件</el-button>
+                                <el-button size="small" type="primary" @click="applySingleFile(fileDiff)">应用本文件</el-button>
+                            </div>
+                            <span style="font-size:12px;color:#666;">{{fileDiff.filePath}}</span>
+                        </div>
+                        <div style="display:flex;">
+                            <h4 class="diff-col-title title-old">原始代码</h4>
+                            <h4 class="diff-col-title title-new">修改后代码</h4>
+                        </div>
+                        <div v-for="item in fileDiff.diffList" :key="item.startLine + item.type" class="diff-item-wrap">
+                            <div class="diff-check-line">
+                                <el-checkbox v-model="item.selected">
+                                    {{item.startLine}}~{{item.endLine}}
+                                    {{item.type==='INSERT'?'新增':item.type==='DELETE'?'删除':'修改'}}
+                                </el-checkbox>
+                            </div>
+                            <div class="diff-two-col">
+                                <div class="diff-col"><pre class="diff-old-code">{{item.oldContent||'(无)'}}</pre></div>
+                                <div class="diff-col"><pre class="diff-new-code">{{item.newContent||'(无)'}}</pre></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="padding:10px 16px;">
+                        <el-button type="primary" @click="applyAllFile(msg.allDiff)">批量应用所有勾选文件</el-button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI加载中 修复：模板禁止at(-1)，用变量标记 -->
+            <div v-if="isLoading && messages.length > 0">
+                <div class="message-item assistant">
+                    <div class="message-row">
+                        <div class="avatar"><el-icon><Monitor /></el-icon></div>
+                        <div class="bubble"><el-icon class="is-loading"><Loading /></el-icon> 思考中...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 高高度输入框底部 修复：绑定keydown事件 -->
+        <div class="input-footer">
+            <el-input
+                    v-model="inputMessage"
+                    type="textarea"
+                    class="textarea-box"
+                    :autosize="{ minRows: 6, maxRows: 12 }"
+                    placeholder="直接Enter换行，Shift + Enter发送消息"
+                    :disabled="isLoading"
+                    @keydown="handleKeydown"
+            ></el-input>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span class="send-tip">Enter换行 | Shift+Enter 提交对话</span>
+                <el-button type="primary" @click="sendMessage" :loading="isLoading" :icon="Promotion">发送消息</el-button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 依赖CDN -->
+<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/element-plus"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue"></script>
+<script>
+    const { createApp, ref, nextTick, watch } = Vue;
+    const app = createApp({
+        setup() {
+            // 基础配置
+            const workspaceId = ref('HaiwanCodex3');
+            const messages = ref([]);
+            const inputMessage = ref('');
+            const isLoading = ref(false);
+            const temperature = ref(0.3);
+            const topP = ref(0.9);
+            const numCtx = ref(4096);
+            const scrollbarRef = ref(null);
+
+            // Token统计变量
+            const tokenIn = ref(0);
+            const tokenOut = ref(0);
+            const tokenTotal = ref(0);
+
+            // 滚动到底部
+            const scrollToBottom = async () => {
+                await nextTick();
+                if (scrollbarRef.value) {
+                    scrollbarRef.value.scrollTop = scrollbarRef.value.scrollHeight;
+                }
+            };
+
+            // 数值监听防报错
+            watch(temperature, (raw) => {
+                let val = Number(raw);
+                if (isNaN(val)) val = 0.3;
+                temperature.value = Math.max(0, Math.min(1, val));
+            });
+            watch(topP, (raw) => {
+                let val = Number(raw);
+                if (isNaN(val)) val = 0.9;
+                topP.value = Math.max(0, Math.min(1, val));
+            });
+            watch(numCtx, (raw) => {
+                let val = Number(raw);
+                if (isNaN(val)) val = 4096;
+                numCtx.value = Math.max(512, Math.min(32768, val));
+            });
+
+            // 键盘：Enter仅换行，Shift+Enter发送
+            const handleKeydown = (e) => {
+                if (e.key === 'Enter' && e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            };
+
+            const processChunk = (data, aiMsg) => {
+                try {
+                    let rawData = data;
+                    try {
+                        const json = JSON.parse(rawData.trim());
+                        rawData = json.content || json.text || "";
+                    } catch (e) {}
+                    if (!rawData) return;
+
+                    // 提取本条消息token，存入当前aiMsg.selfToken
+                    const tokenReg = /<!--TOKEN_USAGE:(\d+),(\d+),(\d+)-->/g;
+                    let match;
+                    while ((match = tokenReg.exec(rawData)) !== null) {
+                        aiMsg.selfToken.in = Number(match[1]);
+                        aiMsg.selfToken.out = Number(match[2]);
+                        aiMsg.selfToken.total = Number(match[3]);
+                    }
+                    // 清除所有TOKEN注释，不渲染到气泡
+                    rawData = rawData.replace(/<!--TOKEN_USAGE:[\s\S]*?-->/g, "");
+
+                    // 原有DIFF解析逻辑不变
+                    const diffAllReg = /<!--DIFF_ALL([\s\S]*?)-->/;
+                    const diffMatch = rawData.match(diffAllReg);
+                    if (diffMatch) {
+                        try {
+                            const rawJson = diffMatch[1].trim();
+                            aiMsg.allDiff = JSON.parse(rawJson);
+                        } catch (err) {
+                            console.error("diff JSON解析失败", err);
+                        }
+                        rawData = rawData.replace(diffAllReg, "");
+                    }
+                    if (rawData) aiMsg.content += rawData;
+                } catch (err) {
+                    console.error("分片解析异常", err);
+                    aiMsg.content += data;
+                }
+            };
+
+            // Diff操作函数
+            const selectAllFile = (fileDiff) => fileDiff.diffList.forEach(i => i.selected = true);
+            const unselectAllFile = (fileDiff) => fileDiff.diffList.forEach(i => i.selected = false);
+
+            const applySingleFile = async (fileDiff) => {
+                const payload = {
+                    batchDiffList: [{
+                        pathOrClassName: fileDiff.filePath,
+                        diffJson: JSON.stringify(fileDiff.diffList)
+                    }]
+                };
+                // 拼接url参数
+                const params = new URLSearchParams();
+                params.append("workspaceId", workspaceId.value);
+
+                const res = await fetch(`/agent/patch?${params.toString()}`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) throw new Error("接口返回异常");
+                ElementPlus.ElMessage.success(`已应用文件：${fileDiff.filePath}`);
+                fileDiff.diffList = [];
+            };
+
+            // 批量应用所有勾选文件
+            const applyAllFile = async (allDiff) => {
+                const batch = [];
+                allDiff.fileDiffList.forEach(file => {
+                    const selected = file.diffList.filter(item => item.selected === true);
+                    if (selected.length > 0) {
+                        batch.push({
+                            pathOrClassName: file.filePath,
+                            diffJson: JSON.stringify(selected)
+                        });
+                    }
+                });
+                if (batch.length === 0) {
+                    ElementPlus.ElMessage.warning("未勾选任何变更内容");
+                    return;
+                }
+                const payload = { batchDiffList: batch };
+
+                const params = new URLSearchParams();
+                params.append("workspaceId", workspaceId.value);
+
+                await fetch(`/agent/patch?${params.toString()}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                ElementPlus.ElMessage.success("所有选中文件修改完成");
+                allDiff.fileDiffList = [];
+            };
+
+            // 发送消息主逻辑
+            const sendMessage = async () => {
+                const text = inputMessage.value.trim();
+                if (!text || isLoading.value) return;
+                // AI消息挂载allDiff、selfToken独立存储本条token
+                messages.value.push({ role: "user", content: text });
+                messages.value.push({
+                    role: "assistant",
+                    content: "",
+                    allDiff: null,
+                    selfToken: { in: 0, out: 0, total: 0 }
+                });
+                inputMessage.value = "";
+                isLoading.value = true;
+                scrollToBottom();
+
+                const params = new URLSearchParams();
+                params.append("message", text);
+                if (workspaceId.value) params.append("workspaceId", workspaceId.value);
+                params.append("workspaceRoot", "D:\\ideaSpace");
+                params.append("temperature", temperature.value);
+                params.append("topP", topP.value);
+                params.append("numCtx", numCtx.value);
+
+                try {
+                    const resp = await fetch(`/chat/stream?${params.toString()}`);
+                    if (!resp.ok) throw new Error("HTTP " + resp.status);
+                    const reader = resp.body.getReader();
+                    const decoder = new TextDecoder("utf-8");
+                    let buffer = "";
+                    const aiMsg = messages.value.at(-1);
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split("\n");
+                        buffer = lines.pop();
+                        for (const line of lines) {
+                            if (line.startsWith("data:")) {
+                                const d = line.slice(5).trimStart();
+                                if (d === "[DONE]") continue;
+                                processChunk(d, aiMsg);
+                            }
+                        }
+                        scrollToBottom();
+                    }
+
+                    // 剩余缓存处理
+                    if (buffer.startsWith("data:")) {
+                        const d = buffer.slice(5).trimStart();
+                        if (d !== "[DONE]") {
+                            processChunk(d, aiMsg);
+                        }
+                    }
+
+                    const t = aiMsg.selfToken;
+                    if (t.total > 0) {
+                        aiMsg.content += `
+📥输入:${t.in}  📤输出:${t.out}  ⚡总计:${t.total}
+`;
+                        scrollToBottom();
+                    }
+                    refreshTokenStat();
+                } catch (err) {
+                    const aiMsg = messages.value.at(-1);
+                    aiMsg.content = "⚠️ 请求失败：" + err.message;
+                    ElementPlus.ElMessage.error("对话请求异常");
+                } finally {
+                    isLoading.value = false;
+                    scrollToBottom();
+                }
+            };
+
+            // 加载历史对话 修复：消息字段allDiff
+            const loadHistory = async () => {
+                if (!workspaceId.value) return ElementPlus.ElMessage.warning("请填写工作区ID");
+                try {
+                    const res = await fetch(`/chat/history?workspaceId=${workspaceId.value}`);
+                    if (!res.ok) throw new Error("加载失败");
+                    const data = await res.json();
+                    messages.value = data.map(item => ({
+                        role: (item.role || "user").toLowerCase().includes("user") ? "user" : "assistant",
+                        content: item.content || "",
+                        allDiff: null
+                    }));
+                    scrollToBottom();
+                    refreshTokenStat();
+                    ElementPlus.ElMessage.success("历史加载完成");
+                } catch (e) {
+                    ElementPlus.ElMessage.error("加载历史失败");
+                }
+            };
+
+            // 清空全部对话
+            const clearHistory = async () => {
+                if (!workspaceId.value) return ElementPlus.ElMessage.warning("请填写工作区ID");
+                try {
+                    await ElementPlus.ElMessageBox.confirm("确认清空当前工作区全部对话？", "提示", { type: "warning" });
+                    await fetch(`/chat/history?workspaceId=${workspaceId.value}`, { method: "DELETE" });
+                    messages.value = [];
+                    tokenIn.value = 0;
+                    tokenOut.value = 0;
+                    tokenTotal.value = 0;
+                    ElementPlus.ElMessage.success("对话已清空");
+                } catch (e) {
+                    if (e !== "cancel") ElementPlus.ElMessage.error("清空对话失败");
+                }
+            };
+
+            // 刷新token统计
+            const refreshTokenStat = async () => {
+                if (!workspaceId.value) {
+                    ElementPlus.ElMessage.warning("请先填写工作区ID");
+                    return;
+                }
+                try {
+                    const res = await fetch(`/admin/codex/stat/ws/${workspaceId.value}`);
+                    if (!res.ok) throw new Error("获取统计失败");
+                    const data = await res.json();
+                    tokenIn.value = data.inputToken || 0;
+                    tokenOut.value = data.outputToken || 0;
+                    tokenTotal.value = data.totalToken || 0;
+                } catch (err) {
+                    ElementPlus.ElMessage.error("刷新统计失败：" + err.message);
+                }
+            };
+
+            // 清空工作区token统计
+            const clearWsStat = async () => {
+                if (!workspaceId.value) {
+                    ElementPlus.ElMessage.warning("请先填写工作区ID");
+                    return;
+                }
+                await ElementPlus.ElMessageBox.confirm("确定清空当前工作区全部Token统计？数据不可恢复", "警告", { type: "warning" });
+                try {
+                    await fetch(`/admin/codex/stat/ws/${workspaceId.value}`, { method: "DELETE" });
+                    tokenIn.value = 0;
+                    tokenOut.value = 0;
+                    tokenTotal.value = 0;
+                    ElementPlus.ElMessage.success("统计数据已清空");
+                } catch (err) {
+                    ElementPlus.ElMessage.error("清空统计失败：" + err.message);
+                }
+            };
+            const mockDiffPanel = async () => {
+                try {
+                    // 请求后端生成标准diff文本，传入两个测试文件
+                    const payload = {
+                        fileCodeMap: {
+                            "src/main/java/com/haiwancodex/www/service/UserService.java": `package com.codex.service;
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserService {
+    public String hello() {
+        return "测试修改后的代码内容";
+    }
+}`,
+                            "src/main/java/com/haiwancodex/www/controller/UserController.java": `package com.codex.controller;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class UserController {
+    @GetMapping("/hello")
+    public String hello() {
+        return "控制器测试";
+    }
+}`
+                        }
+                    };
+                    // 拼接url参数，和chat/stream、patch接口保持一致
+                    const params = new URLSearchParams();
+                    params.append("workspaceId", workspaceId.value);
+                    const res = await fetch(`/gen?${params.toString()}`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                    const diffText = await res.text();
+
+                    // 组装模拟AI消息，复用页面原有解析逻辑
+                    const newMsg = {
+                        role: "assistant",
+                        content: diffText,
+                        allDiff: null
+                    };
+                    const reg = /<!--DIFF_ALL:(.*?)-->/s;
+                    const match = diffText.match(reg);
+                    if (match) {
+                        newMsg.allDiff = JSON.parse(match[1]);
+                    }
+                    messages.value.push(newMsg);
+
+                    // 自动滚动到底部
+                    nextTick(() => {
+                        if (scrollbarRef.value) scrollbarRef.value.scrollTop = scrollbarRef.value.scrollHeight;
+                    });
+                    ElementPlus.ElMessage.success("多文件Diff面板加载完成");
+                } catch (err) {
+                    ElementPlus.ElMessage.error("请求后端生成diff失败：" + err.message);
+                    console.error(err);
+                }
+            };
+            return {
+                workspaceId, messages, inputMessage, isLoading,
+                temperature, topP, numCtx, scrollbarRef,
+                tokenIn, tokenOut, tokenTotal,
+                handleKeydown, sendMessage, loadHistory, clearHistory,
+                refreshTokenStat, clearWsStat,
+                selectAllFile, unselectAllFile, applySingleFile, applyAllFile,
+                mockDiffPanel,
+                History: ElementPlusIconsVue.History,
+                Delete: ElementPlusIconsVue.Delete,
+                User: ElementPlusIconsVue.User,
+                Monitor: ElementPlusIconsVue.Monitor,
+                Loading: ElementPlusIconsVue.Loading,
+                Promotion: ElementPlusIconsVue.Promotion,
+                ChatDotRound: ElementPlusIconsVue.ChatDotRound
+            };
+        }
+    });
+    // 全局注册图标
+    Object.entries(ElementPlusIconsVue).forEach(([key, comp]) => {
+        app.component(key, comp);
+    });
+    app.use(ElementPlus);
+    app.mount("#app");
+</script>
+</body>
+</html>

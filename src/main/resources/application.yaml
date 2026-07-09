@@ -1,0 +1,44 @@
+server:
+  port: 9002
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true    # 强制覆盖响应头的字符集，优先级最高
+      enabled: true
+
+spring:
+  application:
+    name: HaiwanCodex3
+
+  ai:
+    chat:
+      client:
+        enabled: false
+    openai:
+      api-key: sk-or-v1-111
+      base-url: https://openrouter.ai/api/v1
+      chat:
+        options:
+          model: qwen/qwen3-coder:free
+          # 流式开启token统计，打印usage
+          stream-usage: true
+          # 云端256K上下文，不用限制4096
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+# 自定义项目工作目录，文件工具只允许访问这里
+agent:
+  workspace-root: D:/HaiwanCodex3
+
+logging:
+  level:
+    com.haiwancodex.www.advisor.LoggingAdvisor: TRACE   # 打印 chunk 细节
+    org.springframework.ai: DEBUG                       # 可选，查看 Spring AI 内部日志
