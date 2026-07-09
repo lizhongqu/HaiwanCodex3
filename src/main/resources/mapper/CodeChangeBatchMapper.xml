@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.haiwancodex.www.mapper.CodeChangeBatchMapper">
+    <resultMap id="BaseResultMap" type="com.haiwancodex.www.entity.CodeChangeBatch">
+        <id column="id" property="id"/>
+        <result column="workspace_id" property="workspaceId"/>
+        <result column="message_id" property="messageId"/>
+        <result column="desc" property="desc"/>
+        <result column="prompt_tokens" property="promptTokens"/>
+        <result column="completion_tokens" property="completionTokens"/>
+        <result column="total_tokens" property="totalTokens"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO code_change_batch
+        (workspace_id, message_id, `desc`, prompt_tokens, completion_tokens, total_tokens)
+        VALUES (#{workspaceId},#{messageId},#{desc},#{promptTokens},#{completionTokens},#{totalTokens})
+    </insert>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM code_change_batch WHERE id = #{id}
+    </select>
+
+    <select id="selectByWsMsg" resultMap="BaseResultMap">
+        SELECT * FROM code_change_batch WHERE workspace_id = #{workspaceId} AND message_id = #{messageId}
+    </select>
+
+    <update id="updateById">
+        UPDATE code_change_batch
+        SET workspace_id=#{workspaceId},message_id=#{messageId},`desc`=#{desc},
+        prompt_tokens=#{promptTokens},completion_tokens=#{completionTokens},total_tokens=#{totalTokens}
+        WHERE id=#{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM code_change_batch WHERE id=#{id}
+    </delete>
+</mapper>

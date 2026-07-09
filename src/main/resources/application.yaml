@@ -23,7 +23,29 @@ spring:
           # 流式开启token统计，打印usage
           stream-usage: true
           # 云端256K上下文，不用限制4096
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    url: jdbc:mysql://8.138.241.194:3306/haiwancodex?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowMultiQueries=true
+    username: HaiwanCodex
+    password: ${MYSQL_HaiwanCodex_PASSWORD} # 放环境变量，不写明文
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
+    druid:
+      initial-size: 5
+      max-active: 20
+      min-idle: 5
+      max-wait: 60000
+      # 监控过滤器
+      filters: stat,wall,log4j2
+      stat-view-servlet:
+        enabled: true
+        login-username: admin
+        login-password: 123456
+        allow: 127.0.0.1
+      web-stat-filter:
+        enabled: true
+        url-pattern: /*
+        exclusions: '*.js,*.css,/druid/*'
   data:
     redis:
       host: localhost
@@ -34,6 +56,13 @@ spring:
           max-active: 8
           max-idle: 8
           min-idle: 0
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.haiwancodex.www.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 # 自定义项目工作目录，文件工具只允许访问这里
 agent:
   workspace-root: D:/HaiwanCodex3
