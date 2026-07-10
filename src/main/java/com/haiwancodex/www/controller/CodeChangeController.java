@@ -1,6 +1,5 @@
 package com.haiwancodex.www.controller;
 
-import com.haiwancodex.www.dto.CodeBatchDTO;
 import com.haiwancodex.www.entity.CodeChangeFile;
 import com.haiwancodex.www.service.CodeChangeService;
 import lombok.RequiredArgsConstructor;
@@ -14,14 +13,6 @@ import java.util.List;
 public class CodeChangeController {
 
     private final CodeChangeService codeChangeService;
-
-    /**
-     * 获取工作台左侧批次列表
-     */
-    @GetMapping("/batch/list")
-    public List<CodeBatchDTO> getBatchList(@RequestParam String workspaceId) {
-        return codeChangeService.listBatchByWorkspace(workspaceId);
-    }
 
     /**
      * 获取指定批次下所有文件代码

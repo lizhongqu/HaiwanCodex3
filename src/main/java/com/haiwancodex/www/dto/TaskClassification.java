@@ -1,4 +1,4 @@
-package com.haiwancodex.www.router;
+package com.haiwancodex.www.dto;
 
 import com.haiwancodex.www.common.TaskType;
 import lombok.Data;

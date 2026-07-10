@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Codex Chat 新版分栏布局</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/dist/index.css">
+    <!-- 替换为国内加速CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus@2.14.3/dist/index.css">
     <style>
         * {
             box-sizing: border-box;
@@ -21,7 +22,6 @@
             height: 100vh;
             display: flex;
         }
-
         /* 左侧配置侧边栏 */
         .left-sidebar {
             width: 280px;
@@ -71,7 +71,6 @@
             flex-direction: column;
             gap: 8px;
         }
-
         /* 右侧主窗口 */
         .main-wrap {
             flex: 1;
@@ -85,8 +84,10 @@
             border-bottom: 1px solid #e4e7ed;
             font-size: 18px;
             font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-
         /* 聊天消息区域 */
         .chat-scroll {
             flex: 1;
@@ -159,6 +160,21 @@
             color: #fff;
             border-top-right-radius: 0;
         }
+        /* 消息底部Token展示 */
+        .msg-footer {
+            font-size: 12px;
+            color: #909399;
+            margin-left: 48px;
+            display: flex;
+            gap: 12px;
+        }
+        .msg-footer .go-workbench {
+            color: #409eff;
+            cursor: pointer;
+        }
+        .msg-footer .go-workbench:hover {
+            text-decoration: underline;
+        }
         /* 底部高输入框区域 */
         .input-footer {
             padding: 16px 20px;
@@ -175,7 +191,6 @@
             font-size: 12px;
             color: #909399;
         }
-
         /* 工具调用卡片 */
         .tool-call-card {
             margin: 12px 0;
@@ -197,6 +212,78 @@
             height: 16px;
             animation: spin 1s linear infinite;
         }
+        /* 工作台弹窗样式 */
+        .workbench-dialog :deep(.el-dialog__body) {
+            padding: 0;
+            height: 600px;
+            display: flex;
+        }
+        .workbench-left {
+            width: 320px;
+            border-right: 1px solid #e4e7ed;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .workbench-left-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+        }
+        .batch-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .batch-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            transition: background .2s;
+        }
+        .batch-item:hover {
+            background: #f5f7fa;
+        }
+        .batch-item.active {
+            background: #ecf5ff;
+            border-left: 3px solid #409eff;
+        }
+        .batch-desc {
+            font-size: 13px;
+            color: #303133;
+            margin-bottom: 6px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+        .batch-meta {
+            font-size: 12px;
+            color: #909399;
+            display: flex;
+            justify-content: space-between;
+        }
+        .batch-del {
+            color: #f56c6c;
+            cursor: pointer;
+        }
+        .workbench-right {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #c0c4cc;
+            font-size: 14px;
+        }
+        .empty-batch {
+            text-align: center;
+            padding: 40px 20px;
+            color: #c0c4cc;
+            font-size: 13px;
+        }
     </style>
 </head>
 <body>
@@ -214,7 +301,6 @@
                 <el-button block plain type="danger" @click="clearHistory" :icon="Delete">清空全部对话</el-button>
             </div>
         </div>
-
         <div>
             <div class="sidebar-title">模型参数</div>
             <div class="param-block" style="margin-top:12px;">
@@ -237,7 +323,6 @@
                 ></el-input-number>
             </div>
         </div>
-
         <!-- Token统计面板 -->
         <div>
             <div class="sidebar-title" style="display:flex;justify-content:space-between;align-items:center;">
@@ -263,18 +348,18 @@
             </div>
         </div>
     </div>
-
     <!-- 右侧主区域 -->
     <div class="main-wrap">
-        <div class="main-header">🤖 AI Codex Chat</div>
-
+        <div class="main-header">
+            <span>🤖 AI Codex Chat</span>
+            <el-button type="primary" size="small" @click="openWorkbench" :icon="Files">打开工作台</el-button>
+        </div>
         <!-- 聊天消息滚动区 -->
         <div class="chat-scroll" ref="scrollbarRef">
             <div v-if="messages.length === 0" class="empty-tip">
                 <el-icon size="48"><ChatDotRound /></el-icon>
                 <p>输入指令开始对话（Shift+Enter发送）</p>
             </div>
-
             <div v-for="(msg, idx) in messages" :key="idx" class="message-item" :class="msg.role">
                 <div class="message-row">
                     <div class="avatar">
@@ -283,10 +368,15 @@
                     </div>
                     <div class="bubble">{{ msg.content }}</div>
                 </div>
-
+                <!-- 消息底部Token + 工作台入口 -->
+                <div v-if="msg.role === 'assistant' && msg.selfToken.total > 0" class="msg-footer">
+                    <span>本次消耗 {{ msg.selfToken.total }} Token</span>
+                    <span v-if="msg.fileChangeCount > 0" class="go-workbench" @click="openWorkbench">
+                        生成 {{ msg.fileChangeCount }} 个文件变更，前往工作台查看
+                    </span>
+                </div>
             </div>
-
-            <!-- AI加载中 修复：模板禁止at(-1)，用变量标记 -->
+            <!-- AI加载中 -->
             <div v-if="isLoading && messages.length > 0">
                 <div class="message-item assistant">
                     <div class="message-row">
@@ -296,8 +386,7 @@
                 </div>
             </div>
         </div>
-
-        <!-- 高高度输入框底部 修复：绑定keydown事件 -->
+        <!-- 高高度输入框底部 -->
         <div class="input-footer">
             <el-input
                     v-model="inputMessage"
@@ -314,14 +403,40 @@
             </div>
         </div>
     </div>
+
+    <!-- 工作台弹窗 -->
+    <el-dialog v-model="workbenchVisible" title="代码变更工作台" width="900px" class="workbench-dialog" destroy-on-close>
+        <div class="workbench-left">
+            <div class="workbench-left-header">
+                <span>变更批次</span>
+                <el-button size="small" type="danger" plain @click="clearAllBatch">清空全部</el-button>
+            </div>
+            <div class="batch-list">
+                <div v-if="batchList.length === 0" class="empty-batch">暂无变更记录</div>
+                <div v-for="batch in batchList" :key="batch.id"
+                     class="batch-item"
+                     :class="{active: activeBatchId === batch.id}"
+                     @click="selectBatch(batch)">
+                    <div class="batch-desc">{{ batch.desc }}</div>
+                    <div class="batch-meta">
+                        <span>{{ batch.createTime }}</span>
+                        <span class="batch-del" @click.stop="deleteBatch(batch.id)">删除</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="workbench-right">
+            Diff 预览功能开发中...
+        </div>
+    </el-dialog>
 </div>
 
-<!-- 依赖CDN -->
+<!-- 依赖CDN 全部替换为jsDelivr加速 -->
 <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
-<script src="https://unpkg.com/element-plus"></script>
-<script src="https://unpkg.com/@element-plus/icons-vue"></script>
+<script src="https://cdn.jsdelivr.net/npm/element-plus@2.14.3/dist/index.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@element-plus/icons-vue@2.3.1/dist/index.iife.min.js"></script>
 <script>
-    const { createApp, ref, nextTick, watch } = Vue;
+    const { createApp, ref, nextTick, watch, onMounted } = Vue;
     const app = createApp({
         setup() {
             // 基础配置
@@ -338,6 +453,11 @@
             const tokenIn = ref(0);
             const tokenOut = ref(0);
             const tokenTotal = ref(0);
+
+            // 工作台相关
+            const workbenchVisible = ref(false);
+            const batchList = ref([]);
+            const activeBatchId = ref(null);
 
             // 滚动到底部
             const scrollToBottom = async () => {
@@ -372,44 +492,18 @@
                 }
             };
 
-            const processChunk = (data, aiMsg) => {
-                try {
-                    let rawData = data;
-                    try {
-                        const json = JSON.parse(rawData.trim());
-                        rawData = json.content || json.text || "";
-                    } catch (e) {}
-                    if (!rawData) return;
-
-                    // 提取本条消息token，存入当前aiMsg.selfToken
-                    const tokenReg = /<!--TOKEN_USAGE:(\d+),(\d+),(\d+)-->/g;
-                    let match;
-                    while ((match = tokenReg.exec(rawData)) !== null) {
-                        aiMsg.selfToken.in = Number(match[1]);
-                        aiMsg.selfToken.out = Number(match[2]);
-                        aiMsg.selfToken.total = Number(match[3]);
-                    }
-                    // 清除所有TOKEN注释，不渲染到气泡
-                    rawData = rawData.replace(/<!--TOKEN_USAGE:[\s\S]*?-->/g, "");
-
-                    if (rawData) aiMsg.content += rawData;
-                } catch (err) {
-                    console.error("分片解析异常", err);
-                    aiMsg.content += data;
-                }
-            };
-
             // 发送消息主逻辑
             const sendMessage = async () => {
                 const text = inputMessage.value.trim();
                 if (!text || isLoading.value) return;
-                // AI消息挂载allDiff、selfToken独立存储本条token
+
                 messages.value.push({ role: "user", content: text });
                 messages.value.push({
                     role: "assistant",
                     content: "",
-                    allDiff: null,
-                    selfToken: { in: 0, out: 0, total: 0 }
+                    selfToken: { in: 0, out: 0, total: 0 },
+                    fileChangeCount: 0,
+                    messageId: null
                 });
                 inputMessage.value = "";
                 isLoading.value = true;
@@ -426,206 +520,161 @@
                 try {
                     const resp = await fetch(`/chat/stream?${params.toString()}`);
                     if (!resp.ok) throw new Error("HTTP " + resp.status);
+
                     const reader = resp.body.getReader();
                     const decoder = new TextDecoder("utf-8");
+                    // 缓冲区：存放未换行的半截数据
                     let buffer = "";
                     const aiMsg = messages.value.at(-1);
+                    let currentEvent = 'message';
 
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) break;
+
                         buffer += decoder.decode(value, { stream: true });
                         const lines = buffer.split("\n");
                         buffer = lines.pop();
+
                         for (const line of lines) {
-                            if (line.startsWith("data:")) {
+                            const trimLine = line.trim();
+                            // 空行直接跳过
+                            if (!trimLine) continue;
+                            if (line.startsWith('event:')) {
+                                currentEvent = line.slice(6).trim();
+                                continue;
+                            }
+                            if (line.startsWith('data:')) {
                                 const d = line.slice(5).trimStart();
-                                if (d === "[DONE]") continue;
-                                processChunk(d, aiMsg);
+                                if (!d) continue;
+
+                                if (currentEvent === 'message' || currentEvent === '') {
+                                    aiMsg.content += d;
+                                } else if (currentEvent === 'done') {
+                                    try {
+                                        const doneData = JSON.parse(d);
+                                        aiMsg.selfToken.in = doneData.promptTokens || 0;
+                                        aiMsg.selfToken.out = doneData.completionTokens || 0;
+                                        aiMsg.selfToken.total = doneData.totalTokens || 0;
+
+                                        tokenIn.value += aiMsg.selfToken.in;
+                                        tokenOut.value += aiMsg.selfToken.out;
+                                        tokenTotal.value += aiMsg.selfToken.total;
+                                    } catch (e) {
+                                        console.warn('done事件解析失败', e);
+                                    }
+                                }
                             }
                         }
                         scrollToBottom();
                     }
-
-                    // 剩余缓存处理
-                    if (buffer.startsWith("data:")) {
-                        const d = buffer.slice(5).trimStart();
-                        if (d !== "[DONE]") {
-                            processChunk(d, aiMsg);
-                        }
-                    }
-
-                    const t = aiMsg.selfToken;
-                    if (t.total > 0) {
-                        aiMsg.content += `
-📥输入:${t.in}  📤输出:${t.out}  ⚡总计:${t.total}
-`;
-                        scrollToBottom();
-                    }
-                    refreshTokenStat();
                 } catch (err) {
-                    const aiMsg = messages.value.at(-1);
-                    aiMsg.content = "⚠️ 请求失败：" + err.message;
-                    ElementPlus.ElMessage.error("对话请求异常");
+                    console.error("请求失败", err);
+                    messages.value.at(-1).content += "\n\n请求失败：" + err.message;
                 } finally {
                     isLoading.value = false;
                     scrollToBottom();
                 }
             };
 
-            // 加载历史对话 修复：消息字段allDiff
-            const loadHistory = async () => {
-                if (!workspaceId.value) return ElementPlus.ElMessage.warning("请填写工作区ID");
-                try {
-                    const res = await fetch(`/chat/history?workspaceId=${workspaceId.value}`);
-                    if (!res.ok) throw new Error("加载失败");
-                    const data = await res.json();
-                    messages.value = data.map(item => ({
-                        role: (item.role || "user").toLowerCase().includes("user") ? "user" : "assistant",
-                        content: item.content || "",
-                        allDiff: null
-                    }));
-                    scrollToBottom();
-                    refreshTokenStat();
-                    ElementPlus.ElMessage.success("历史加载完成");
-                } catch (e) {
-                    ElementPlus.ElMessage.error("加载历史失败");
-                }
+            // ========== 工作台相关方法 ==========
+            // 打开工作台
+            const openWorkbench = async () => {
+                workbenchVisible.value = true;
+                await loadBatchList();
             };
 
-            // 清空全部对话
-            const clearHistory = async () => {
-                if (!workspaceId.value) return ElementPlus.ElMessage.warning("请填写工作区ID");
+            // 加载批次列表
+            const loadBatchList = async () => {
                 try {
-                    await ElementPlus.ElMessageBox.confirm("确认清空当前工作区全部对话？", "提示", { type: "warning" });
-                    await fetch(`/chat/history?workspaceId=${workspaceId.value}`, { method: "DELETE" });
-                    messages.value = [];
-                    tokenIn.value = 0;
-                    tokenOut.value = 0;
-                    tokenTotal.value = 0;
-                    ElementPlus.ElMessage.success("对话已清空");
-                } catch (e) {
-                    if (e !== "cancel") ElementPlus.ElMessage.error("清空对话失败");
-                }
-            };
-
-            // 刷新token统计
-            const refreshTokenStat = async () => {
-                if (!workspaceId.value) {
-                    ElementPlus.ElMessage.warning("请先填写工作区ID");
-                    return;
-                }
-                try {
-                    const res = await fetch(`/admin/codex/stat/ws/${workspaceId.value}`);
-                    if (!res.ok) throw new Error("获取统计失败");
-                    const data = await res.json();
-                    tokenIn.value = data.inputToken || 0;
-                    tokenOut.value = data.outputToken || 0;
-                    tokenTotal.value = data.totalToken || 0;
-                } catch (err) {
-                    ElementPlus.ElMessage.error("刷新统计失败：" + err.message);
-                }
-            };
-
-            // 清空工作区token统计
-            const clearWsStat = async () => {
-                if (!workspaceId.value) {
-                    ElementPlus.ElMessage.warning("请先填写工作区ID");
-                    return;
-                }
-                await ElementPlus.ElMessageBox.confirm("确定清空当前工作区全部Token统计？数据不可恢复", "警告", { type: "warning" });
-                try {
-                    await fetch(`/admin/codex/stat/ws/${workspaceId.value}`, { method: "DELETE" });
-                    tokenIn.value = 0;
-                    tokenOut.value = 0;
-                    tokenTotal.value = 0;
-                    ElementPlus.ElMessage.success("统计数据已清空");
-                } catch (err) {
-                    ElementPlus.ElMessage.error("清空统计失败：" + err.message);
-                }
-            };
-            const mockDiffPanel = async () => {
-                try {
-                    // 请求后端生成标准diff文本，传入两个测试文件
-                    const payload = {
-                        fileCodeMap: {
-                            "src/main/java/com/haiwancodex/www/service/UserService.java": `package com.codex.service;
-import org.springframework.stereotype.Service;
-
-@Service
-public class UserService {
-    public String hello() {
-        return "测试修改后的代码内容";
-    }
-}`,
-                            "src/main/java/com/haiwancodex/www/controller/UserController.java": `package com.codex.controller;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
-
-@RestController
-public class UserController {
-    @GetMapping("/hello")
-    public String hello() {
-        return "控制器测试";
-    }
-}`
-                        }
-                    };
-                    // 拼接url参数，和chat/stream、patch接口保持一致
-                    const params = new URLSearchParams();
-                    params.append("workspaceId", workspaceId.value);
-                    const res = await fetch(`/gen?${params.toString()}`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload)
-                    });
-                    const diffText = await res.text();
-
-                    // 组装模拟AI消息，复用页面原有解析逻辑
-                    const newMsg = {
-                        role: "assistant",
-                        content: diffText,
-                        allDiff: null
-                    };
-                    const reg = /<!--DIFF_ALL:(.*?)-->/s;
-                    const match = diffText.match(reg);
-                    if (match) {
-                        newMsg.allDiff = JSON.parse(match[1]);
+                    const resp = await fetch(`/codex/change/batch/list?workspaceId=${workspaceId.value}`);
+                    const res = await resp.json();
+                    if (res.code === 200) {
+                        batchList.value = res.data || [];
                     }
-                    messages.value.push(newMsg);
-
-                    // 自动滚动到底部
-                    nextTick(() => {
-                        if (scrollbarRef.value) scrollbarRef.value.scrollTop = scrollbarRef.value.scrollHeight;
-                    });
-                    ElementPlus.ElMessage.success("多文件Diff面板加载完成");
-                } catch (err) {
-                    ElementPlus.ElMessage.error("请求后端生成diff失败：" + err.message);
-                    console.error(err);
+                } catch (e) {
+                    console.error('加载批次列表失败', e);
                 }
             };
+
+            // 选中批次
+            const selectBatch = (batch) => {
+                activeBatchId.value = batch.id;
+                // 后续阶段实现Diff预览
+            };
+
+            // 删除单条批次
+            const deleteBatch = async (id) => {
+                if (!confirm('确定删除这条变更记录吗？')) return;
+                try {
+                    const resp = await fetch(`/codex/change/batch?id=${id}`, { method: 'DELETE' });
+                    const res = await resp.json();
+                    if (res.code === 200) {
+                        ElementPlus.ElMessage.success('删除成功');
+                        loadBatchList();
+                    }
+                } catch (e) {
+                    console.error('删除失败', e);
+                }
+            };
+
+            // 清空全部批次
+            const clearAllBatch = async () => {
+                if (!confirm('确定清空当前工作区所有变更记录吗？此操作不可恢复')) return;
+                try {
+                    const resp = await fetch(`/codex/change/batch/clear?workspaceId=${workspaceId.value}`, { method: 'DELETE' });
+                    const res = await resp.json();
+                    if (res.code === 200) {
+                        ElementPlus.ElMessage.success('已清空全部变更记录');
+                        loadBatchList();
+                        activeBatchId.value = null;
+                    }
+                } catch (e) {
+                    console.error('清空失败', e);
+                }
+            };
+
+            // 占位方法
+            const loadHistory = () => {
+                ElementPlus.ElMessage.info('历史记录功能开发中');
+            };
+            const clearHistory = () => {
+                messages.value = [];
+                tokenIn.value = 0;
+                tokenOut.value = 0;
+                tokenTotal.value = 0;
+            };
+            const refreshTokenStat = () => {
+                ElementPlus.ElMessage.info('已刷新');
+            };
+            const clearWsStat = () => {
+                tokenIn.value = 0;
+                tokenOut.value = 0;
+                tokenTotal.value = 0;
+            };
+
             return {
+                // 基础
                 workspaceId, messages, inputMessage, isLoading,
                 temperature, topP, numCtx, scrollbarRef,
+                // Token
                 tokenIn, tokenOut, tokenTotal,
-                handleKeydown, sendMessage, loadHistory, clearHistory,
-                refreshTokenStat, clearWsStat,
-                History: ElementPlusIconsVue.History,
-                Delete: ElementPlusIconsVue.Delete,
-                User: ElementPlusIconsVue.User,
-                Monitor: ElementPlusIconsVue.Monitor,
-                Loading: ElementPlusIconsVue.Loading,
-                Promotion: ElementPlusIconsVue.Promotion,
-                ChatDotRound: ElementPlusIconsVue.ChatDotRound
+                // 工作台
+                workbenchVisible, batchList, activeBatchId,
+                // 方法
+                handleKeydown, sendMessage,
+                openWorkbench, loadBatchList, selectBatch, deleteBatch, clearAllBatch,
+                loadHistory, clearHistory, refreshTokenStat, clearWsStat
             };
         }
     });
-    // 全局注册图标
-    Object.entries(ElementPlusIconsVue).forEach(([key, comp]) => {
-        app.component(key, comp);
-    });
+
+    // 注册Element Plus图标
+    for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+        app.component(key, component);
+    }
     app.use(ElementPlus);
-    app.mount("#app");
+    app.mount('#app');
 </script>
 </body>
 </html>

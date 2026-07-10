@@ -1,36 +1,31 @@
 package com.haiwancodex.www.router;
 
 import com.alibaba.fastjson2.JSON;
-import com.haiwancodex.www.common.TaskType;
-import com.haiwancodex.www.dto.ChatRequest;
-import com.haiwancodex.www.dto.FileDiffItem;
-import com.haiwancodex.www.dto.FileDiffRaw;
+import com.haiwancodex.www.dto.*;
 import com.haiwancodex.www.entity.CodeChangeBatch;
 import com.haiwancodex.www.entity.CodeChangeFile;
 import com.haiwancodex.www.service.CodeChangeService;
 import com.haiwancodex.www.service.StatService;
 import com.haiwancodex.www.tool.WorkspaceFileTools;
 import com.haiwancodex.www.util.ChatClientUtil;
+import com.haiwancodex.www.util.CodeChangeParser;
 import com.haiwancodex.www.util.ProjectIndexScanner;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SynchronousSink;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -68,7 +63,9 @@ public class BrainPool {
         return classification;
     }
 
-    public Flux<ServerSentEvent<String>> chat(ChatRequest chatRequest) {
+    public Flux<ServerSentEvent<String>> chat(ChatRequest chatRequest, String reasoning) {
+
+
         String chatSystemPrompt = """
                         你是一个专业的 AI 编程助手 (Codex)。
                         你擅长解答编程问题、编写代码片段、解释技术概念。
@@ -77,8 +74,58 @@ public class BrainPool {
                         """;
         // ⚠️ 核心修改 1：传入 false，彻底没收普通对话的文件操作工具！
         ChatClient chatClient = chatClientUtil.buildBigmodelChatClient(chatRequest, chatSystemPrompt, false);
-
-        return executeStreamChat(chatClient, chatRequest, "Flash/Chat模型");
+        AtomicReference<ChatResponse> finalResponse = new AtomicReference<>();
+        AtomicBoolean loadingFlag = new AtomicBoolean(true);
+        // 普通对话无代码变更，无需缓存完整文本入库
+        return chatClient.prompt()
+                .user(chatRequest.getMessage())
+                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, chatRequest.getWorkspaceId()))
+                .stream()
+                .chatResponse()
+                // 建立连接，打开加载状态
+                .doOnSubscribe(sub -> loadingFlag.set(true))
+                // 超时兜底，防止长时间无响应卡死
+                .timeout(Duration.ofSeconds(90))
+                // 逐块处理：原样下发，只拼接原始全文，不做任何清洗
+                .handle((ChatResponse response, SynchronousSink<ServerSentEvent<String>> sink) -> {
+                    String text = response.getResult().getOutput().getText();
+                    if (text == null || text.isBlank()) {
+                        return;
+                    }
+                    sink.next(buildSseEventWithEvent("message", text));
+                    finalResponse.set(response);
+                })
+                // 过滤空无效事件，减少前端无用推送
+                .filter(event -> event.data() != null && !event.data().isBlank())
+                // 【核心逻辑】仅流正常完整结束时执行
+                .doOnComplete(() -> {
+                })
+                // 异常日志打印，不拦截异常
+                .doOnError(err -> log.error("Agent流式输出异常", err))
+                // 异常兜底：返回错误提示 + 空done事件，前端关闭loading
+                .onErrorResume(err -> {
+                    String errMsg = "\n\n⚠️ 模型连接中断，本次生成未完成";
+                    ServerSentEvent<String> errEvent = buildSseEventWithEvent("message", errMsg);
+                    Map tokens = new HashMap();
+                    tokens.put("promptTokens", 0);
+                    tokens.put("completionTokens", 0);
+                    tokens.put("totalTokens", 0);
+                    ServerSentEvent<String> doneEvent = buildSseEventWithEvent("done", JSON.toJSONString(tokens));
+                    return Flux.just(errEvent, doneEvent);
+                })
+                // 无论成功/失败/前端关闭，统一关闭加载状态
+                .doFinally(signalType -> loadingFlag.set(false))
+                .concatWith(Mono.fromSupplier(() -> {
+                    Usage usage = finalResponse.get().getMetadata().getUsage();
+                    long promptTokens = usage.getPromptTokens() == null ? 0 : usage.getPromptTokens();
+                    long completionTokens = usage.getCompletionTokens() == null ? 0 : usage.getCompletionTokens();
+                    long totalTokens = usage.getTotalTokens() == null ? 0 : usage.getTotalTokens();
+                    Map tokens = new HashMap();
+                    tokens.put("promptTokens", promptTokens);
+                    tokens.put("completionTokens", completionTokens);
+                    tokens.put("totalTokens", totalTokens);
+                    return buildSseEventWithEvent("done", JSON.toJSONString(tokens));
+                }));
     }
 
     public Flux<ServerSentEvent<String>> agentLoop(ChatRequest chatRequest, String reasoning) {
@@ -105,7 +152,10 @@ public class BrainPool {
             
             ## 【强制输出规则 最高优先级】
             完成文件新版代码生成后，**必须输出以下固定标记**，多个文件输出多条：
-            <!--FILE_NEW_CODE|{"filePath":"文件相对路径","fullNewCode":"完整代码字符串","wholeDelete":false}-->
+            <!--FILE_NEW_CODE|{"filePath":"文件相对路径","fullNewCode":"完整代码字符串","isDeleteFile":0}-->
+            字段规则：
+            isDeleteFile=0 新增/修改文件，fullNewCode填完整代码
+            isDeleteFile=1 删除文件，fullNewCode填空字符串""
             不输出该标记，后端无法保存变更，工作台不会生成对比批次。
             
             ## 工具错误修复规则
@@ -120,7 +170,6 @@ public class BrainPool {
             ## 代码输出规范
             1. 代码使用 ```java``` Markdown 代码块；
             2. 修改说明只写逻辑，不要重复粘贴完整源码，减少上下文体积；
-            3. 不要自行生成diff面板，全部交由后端标记统一处理。
             
             ## 项目结构参考（减少重复扫描）
             %s
@@ -129,183 +178,83 @@ public class BrainPool {
 
         ChatClient chatClient = chatClientUtil.buildBigmodelChatClient(chatRequest, systemPrompt, true);
 
-        final AtomicReference<ChatResponse> finalRespHolder = new AtomicReference<>();
-        AtomicReference<String> fullAiText = new AtomicReference<>("");
-        // 存储最终要推送的变更通知事件字符串
-        AtomicReference<String> changeNotifyEvent = new AtomicReference<>(null);
+        AtomicReference<ChatResponse> finalResponse = new AtomicReference<>();
+        AtomicBoolean loadingFlag = new AtomicBoolean(true);
+        StringBuilder fullAiText = new StringBuilder();
 
-        Flux<ServerSentEvent<String>> streamFlux = chatClient.prompt()
+        return chatClient.prompt()
                 .user(chatRequest.getMessage())
                 .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, chatRequest.getWorkspaceId()))
                 .stream()
                 .chatResponse()
-                .<ServerSentEvent<String>>handle((response, sink) -> {
-                    finalRespHolder.set(response);
-                    try {
-                        String rawText = "";
-                        var output = response.getResult().getOutput();
-                        if (output != null) {
-                            rawText = output.getText() == null ? "" : output.getText();
-                            fullAiText.set(fullAiText.get() + rawText);
-                            List<AssistantMessage.ToolCall> toolCalls = output.getToolCalls();
-                            if (toolCalls != null && !toolCalls.isEmpty()) {
-                                for (AssistantMessage.ToolCall tc : toolCalls) {
-                                    String name = tc.name();
-                                    String argStr = tc.arguments().replaceAll("[\r\n]", " ").replace("\"", "'");
-                                    rawText += String.format("\n<!--TOOL_CALL:%s|%s-->", name, argStr);
-                                }
-                            }
-                        }
-                        // 移除DIFF标记，不展示在前端聊天
-                        String diffReg = "<!--DIFF_DATA:(.*?)-->";
-                        rawText = rawText.replaceAll(diffReg, "")
-                                .replaceAll("<!--FILE_NEW_CODE\\|[\\s\\S]*?-->", "")
-                                .replaceAll("<!--TOOL_CALL:[\\s\\S]*?-->", "");
-                        // 移除TOKEN注释拼接逻辑
-                        if (!rawText.isBlank()) {
-                            sink.next(buildSseEvent(rawText));
-                        }
-                    } catch (Exception e) {
-                        log.error("Agent流式块处理异常", e);
+                // 建立连接，打开加载状态
+                .doOnSubscribe(sub -> loadingFlag.set(true))
+                // 超时兜底，防止长时间无响应卡死
+                .timeout(Duration.ofSeconds(90))
+                // 逐块处理：原样下发，只拼接原始全文，不做任何清洗
+                .handle((ChatResponse response, SynchronousSink<ServerSentEvent<String>> sink) -> {
+                    String text = response.getResult().getOutput().getText();
+                    if (text == null || text.isBlank()) {
+                        return;
                     }
-                });
+                    fullAiText.append(text);
+                    sink.next(buildSseEventWithEvent("message", text));
+                    finalResponse.set(response);
+                })
+                // 过滤空无效事件，减少前端无用推送
+                .filter(event -> event.data() != null && !event.data().isBlank())
+                // 【核心入库逻辑】仅流正常完整结束时执行
+                .doOnComplete(() -> {
+                    String totalText = fullAiText.toString();
+                    String workspaceId = chatRequest.getWorkspaceId();
+                    String messageId = chatRequest.getMessageId();
+                    String message = chatRequest.getMessage();
+                    Usage usage = finalResponse.get().getMetadata().getUsage();
+                    long promptTokens = usage.getPromptTokens() == null ? 0 : usage.getPromptTokens();
+                    long completionTokens = usage.getCompletionTokens() == null ? 0 : usage.getCompletionTokens();
+                    long totalTokens = usage.getTotalTokens() == null ? 0 : usage.getTotalTokens();
 
-        // 流结束后执行入库逻辑，生成通知事件
-        Flux<ServerSentEvent<String>> notifyFlux = Mono.fromRunnable(() -> {
-                    ChatResponse last = finalRespHolder.get();
-                    String wsId = chatRequest.getWorkspaceId();
-                    String totalText = fullAiText.get();
-                    if (last != null && last.getMetadata() != null && last.getMetadata().getUsage() != null) {
-                        var usage = last.getMetadata().getUsage();
-                        long p = usage.getPromptTokens() == null ? 0 : usage.getPromptTokens();
-                        long c = usage.getCompletionTokens() == null ? 0 : usage.getCompletionTokens();
-                        long total = usage.getTotalTokens() == null ? 0 : usage.getTotalTokens();
-                        statService.recordChat(wsId, p, c);
+                    CodeChangeBatch codeChangeBatch = CodeChangeBatch.builder()
+                            .workspaceId(workspaceId)
+                            .messageId(messageId)
+                            .desc(message)
+                            .promptTokens(promptTokens)
+                            .completionTokens(completionTokens)
+                            .totalTokens(totalTokens)
+                            .build();
 
-                        String diffJsonStr = extractDiffContent(totalText);
-                        List<FileDiffRaw> rawFileList = parseDiffJson(diffJsonStr);
-                        if (!rawFileList.isEmpty()) {
-                            CodeChangeBatch batch = new CodeChangeBatch();
-                            batch.setWorkspaceId(wsId);
-                            // 替换为你实际消息ID
-                            String msgId = chatRequest.getMessageId();
-                            // 前端没传、为空就后端自动生成UUID
-                            if (msgId == null || msgId.isBlank()) {
-                                msgId = UUID.randomUUID().toString();
-                            }
-                            batch.setMessageId(msgId);
-                            String briefDesc = totalText.replaceAll("<!--FILE_NEW_CODE[\\s\\S]*?-->", "").trim();
-                            batch.setDesc(briefDesc.length() > 200 ? briefDesc.substring(0, 200) : briefDesc);
-                            batch.setPromptTokens(p);
-                            batch.setCompletionTokens(c);
-                            batch.setTotalTokens(total);
-
-                            List<CodeChangeFile> fileList = new ArrayList<>();
-                            for (FileDiffRaw raw : rawFileList) {
-                                CodeChangeFile file = new CodeChangeFile();
-                                file.setFilePath(raw.getPathOrClassName());
-                                file.setNewCode(raw.getFullNewCode());
-                                file.setIsDeleteFile(raw.isWholeFileDelete() ? 1 : 0);
-                                fileList.add(file);
-                            }
-                            Long batchId = codeChangeService.saveBatchAndFiles(batch, fileList);
-                            // 组装通知内容，存入变量
-                            String notifyJson = String.format(
-                                    "{\"batchId\":%d,\"inT\":%d,\"outT\":%d,\"totalT\":%d}",
-                                    batchId, p, c, total
-                            );
-                            changeNotifyEvent.set(notifyJson);
-                        }
+                    // 一次性解析所有文件代码块，自动兼容N个文件
+                    List<CodeChangeFile> CodeChangeFileList = CodeChangeParser.parseAllFileCode(totalText);
+                    if (!CodeChangeFileList.isEmpty()) {
+                        codeChangeService.saveBatchAndFiles(codeChangeBatch, CodeChangeFileList);
                     }
                 })
-                .then(Mono.fromSupplier(() -> {
-                    String notifyData = changeNotifyEvent.get();
-                    if (notifyData != null) {
-                        return buildSseEventWithEvent("NEW_CHANGE", notifyData);
-                    }
-                    return null;
-                }))
-                .flux()
-                .filter(Objects::nonNull);
-
-        // 拼接：主流式输出 + 末尾通知事件
-        return Flux.concat(streamFlux, notifyFlux)
+                // 异常日志打印，不拦截异常
+                .doOnError(err -> log.error("Agent流式输出异常", err))
+                // 异常兜底：返回错误提示 + 空done事件，前端关闭loading
                 .onErrorResume(err -> {
-                    String msg = err.getMessage() == null ? "未知异常" : err.getMessage();
-                    log.error("Agent执行流式失败 wsId={}", chatRequest.getWorkspaceId(), err);
-                    return Flux.just(buildSseEvent("⚠️ Agent执行异常：" + msg));
-                });
-    }
-
-    private Flux<ServerSentEvent<String>> executeStreamChat(ChatClient chatClient, ChatRequest req, String modelName) {
-        final var finalResponseHolder = new AtomicReference<ChatResponse>();
-        // 普通对话无代码变更，无需缓存完整文本入库
-        return chatClient.prompt()
-                .user(req.getMessage())
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, req.getWorkspaceId()))
-                .stream()
-                .chatResponse()
-                .<ServerSentEvent<String>>handle((response, sink) -> {
-                    finalResponseHolder.set(response);
-                    try {
-                        String content = "";
-                        if (response != null && response.getResult() != null) {
-                            var output = response.getResult().getOutput();
-                            if (output != null) {
-                                String text = output.getText();
-                                if (text != null) {
-                                    content = text;
-                                }
-                                List<AssistantMessage.ToolCall> toolCalls = output.getToolCalls();
-                                if (toolCalls != null && !toolCalls.isEmpty()) {
-                                    for (AssistantMessage.ToolCall toolCall : toolCalls) {
-                                        String toolName = toolCall.name() != null ? toolCall.name() : "unknown";
-                                        String args = toolCall.arguments() != null ? toolCall.arguments() : "{}";
-                                        String safeArgs = args.replaceAll("[\\r\\n]", " ").replace("\"", "'");
-                                        log.info("🛠️ [{}] 触发工具调用: {} -> {}", req.getWorkspaceId(), toolName, args);
-                                        content += String.format("\n<!--TOOL_CALL:%s|%s-->\n", toolName, safeArgs);
-                                    }
-                                }
-                            }
-                        }
-                        // ========== 核心改动：删除拼接TOKEN_USAGE注释代码 ==========
-                        if (content != null && !content.trim().isEmpty()) {
-                            sink.next(buildSseEvent(content));
-                        }
-                    } catch (Exception e) {
-                        log.error("⚠️ 处理流式响应块时发生异常", e);
-                    }
+                    String errMsg = "\n\n⚠️ 模型连接中断，本次生成未完成";
+                    ServerSentEvent<String> errEvent = buildSseEventWithEvent("message", errMsg);
+                    Map tokens = new HashMap();
+                    tokens.put("promptTokens", 0);
+                    tokens.put("completionTokens", 0);
+                    tokens.put("totalTokens", 0);
+                    ServerSentEvent<String> doneEvent = buildSseEventWithEvent("done", JSON.toJSONString(tokens));
+                    return Flux.just(errEvent, doneEvent);
                 })
-                .doFinally(signalType -> {
-                    ChatResponse lastResp = finalResponseHolder.get();
-                    if (lastResp != null
-                            && lastResp.getMetadata() != null
-                            && lastResp.getMetadata().getUsage() != null) {
-                        var usage = lastResp.getMetadata().getUsage();
-                        long promptTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0L;
-                        long compTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0L;
-                        statService.recordChat(req.getWorkspaceId(), promptTokens, compTokens);
-                    }
-                })
-                .doOnError(error -> {
-                    String errMsg = error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
-                    if (errMsg.contains("Stream failed") || errMsg.contains("Connection reset") || errMsg.contains("ClientAbort") || errMsg.contains("Broken pipe")) {
-                        log.debug("🔌 [{}] 客户端主动断开连接", req.getWorkspaceId());
-                    } else {
-                        log.error("❌ [{}] 流式输出严重错误: {}", req.getWorkspaceId(), errMsg, error);
-                    }
-                })
-                .onErrorResume(error -> {
-                    String errMsg = error.getMessage() != null ? error.getMessage() : "未知错误";
-                    if (errMsg.contains("Stream failed") || errMsg.contains("Connection reset") || errMsg.contains("ClientAbort") || errMsg.contains("Broken pipe")) {
-                        return Flux.empty();
-                    }
-                    return Flux.<ServerSentEvent<String>>just(buildSseEvent("\n⚠️ 后端处理异常: " + errMsg + "\n"));
-                });
-    }
-
-    private ServerSentEvent<String> buildSseEvent(String data) {
-        return ServerSentEvent.<String>builder().data(data).build();
+                // 无论成功/失败/前端关闭，统一关闭加载状态
+                .doFinally(signalType -> loadingFlag.set(false))
+                .concatWith(Mono.fromSupplier(() -> {
+                    Usage usage = finalResponse.get().getMetadata().getUsage();
+                    long promptTokens = usage.getPromptTokens() == null ? 0 : usage.getPromptTokens();
+                    long completionTokens = usage.getCompletionTokens() == null ? 0 : usage.getCompletionTokens();
+                    long totalTokens = usage.getTotalTokens() == null ? 0 : usage.getTotalTokens();
+                    Map tokens = new HashMap();
+                    tokens.put("promptTokens", promptTokens);
+                    tokens.put("completionTokens", completionTokens);
+                    tokens.put("totalTokens", totalTokens);
+                    return buildSseEventWithEvent("done", JSON.toJSONString(tokens));
+                }));
     }
 
     // 构建自定义事件SSE
@@ -314,49 +263,5 @@ public class BrainPool {
                 .event(event)
                 .data(data)
                 .build();
-    }
-
-    private String extractDiffContent(String fullText) {
-        if (fullText == null || fullText.isBlank()) return null;
-        // 匹配单条文件完整代码标记，多条会循环提取合并
-        Pattern pattern = Pattern.compile("<!--FILE_NEW_CODE\\|([\\s\\S]*?)-->");
-        Matcher matcher = pattern.matcher(fullText);
-        StringBuilder allJson = new StringBuilder();
-        allJson.append("[");
-        boolean first = true;
-        while (matcher.find()) {
-            if (!first) allJson.append(",");
-            first = false;
-            allJson.append(matcher.group(1).trim());
-        }
-        if (first) return null;
-        allJson.append("]");
-        return "{\"fileDiffList\":" + allJson + "}";
-    }
-
-    // 解析DIFF JSON为文件变更实体
-    private List<FileDiffRaw> parseDiffJson(String diffJson) {
-        List<FileDiffRaw> result = new ArrayList<>();
-        if (diffJson == null || diffJson.isBlank()) return result;
-        try {
-            DiffRoot root = JSON.parseObject(diffJson, DiffRoot.class);
-            if (root == null || root.fileDiffList == null || root.fileDiffList.isEmpty()) return result;
-            for (FileDiffItem item : root.fileDiffList) {
-                FileDiffRaw raw = new FileDiffRaw();
-                raw.setPathOrClassName(item.getPathOrClassName());
-                raw.setFullNewCode(item.getFullNewCode());
-                raw.setWholeFileDelete(item.isWholeDelete());
-                result.add(raw);
-            }
-        } catch (Exception e) {
-            log.error("解析DIFF JSON失败", e);
-        }
-        return result;
-    }
-
-    // 内部DTO
-    @Data
-    static class DiffRoot {
-        private List<FileDiffItem> fileDiffList;
     }
 }

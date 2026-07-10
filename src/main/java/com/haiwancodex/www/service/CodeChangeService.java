@@ -1,6 +1,5 @@
 package com.haiwancodex.www.service;
 
-import com.haiwancodex.www.dto.CodeBatchDTO;
 import com.haiwancodex.www.entity.CodeChangeBatch;
 import com.haiwancodex.www.entity.CodeChangeFile;
 import com.haiwancodex.www.mapper.CodeChangeBatchMapper;
@@ -12,7 +11,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -52,23 +50,6 @@ public class CodeChangeService {
     public void clearAllByWorkspace(String workspaceId) {
         fileMapper.deleteAllByWs(workspaceId);
         batchMapper.deleteAllByWs(workspaceId);
-    }
-
-    /**
-     * 根据工作空间查询所有变更批次（转为前端列表DTO）
-     */
-    public List<CodeBatchDTO> listBatchByWorkspace(String workspaceId) {
-        List<CodeChangeBatch> batchList = batchMapper.selectByWorkspaceId(workspaceId);
-        return batchList.stream().map(batch -> {
-            CodeBatchDTO dto = new CodeBatchDTO();
-            dto.setBatchId(batch.getId());
-            dto.setDesc(batch.getDesc());
-            dto.setPromptTokens(batch.getPromptTokens());
-            dto.setCompletionTokens(batch.getCompletionTokens());
-            dto.setTotalTokens(batch.getTotalTokens());
-            dto.setCreatedAt(batch.getCreatedAt());
-            return dto;
-        }).collect(Collectors.toList());
     }
 
     /**

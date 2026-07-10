@@ -1,13 +1,7 @@
 package com.haiwancodex.www.tool;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.haiwancodex.www.common.ToolErrType;
-import com.haiwancodex.www.dto.CodeDiffItem;
-import com.haiwancodex.www.dto.FileDiffResult;
-import com.haiwancodex.www.dto.MultiFileDiffResult;
-import com.haiwancodex.www.service.CodeDiffService;
 import com.haiwancodex.www.service.StatService;
-import com.haiwancodex.www.util.DiffUtil;
 import com.haiwancodex.www.util.ProjectIndexScanner;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -18,15 +12,12 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.stereotype.Component;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -44,9 +35,6 @@ public class WorkspaceFileTools {
 
     private final ProjectIndexScanner projectIndexScanner;
     private final StatService statService;
-    private final CodeDiffService codeDiffService;
-    private final ObjectMapper objectMapper;
-    private final DiffUtil diffUtil;
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceFileTools.class);
 
@@ -531,111 +519,6 @@ public class WorkspaceFileTools {
             return errorResult(ToolErrType.IO_PERMISSION_ERROR, "按行读取文件片段异常：" + e.getMessage());
         }
     }
-
-    /**
-     * 批量生成多文件结构化差异，输出前端可识别DIFF标记
-     * AI修改文件标准收尾工具，修改完成后必须调用本工具生成代码对比面板
-     * 支持单文件/多文件统一处理，自动读取磁盘原始文件与传入新版代码做行级对比
-     */
-    @Tool(description = """
-        批量生成文件代码差异，修改文件后必须调用该工具生成对比面板。
-        支持同时传入多个文件，自动读取工作区内原始文件，与传入的完整新版代码做行级Diff。
-        自动过滤无变更文件，返回带前端识别标记的字符串，对话流会自动渲染左右分栏代码对比。
-        适用场景：完成代码修改、新增/删除/调整代码后，生成可视化差异供用户勾选应用。
-        参数说明：
-        fileCodeMap：键=文件路径/Java类名，值=修改完成后的完整文件全部代码，不可只传片段
-        """)
-    public String batchGenerateDiff(
-            @ToolParam(description = "文件映射：key为文件路径或Java类名，value为该文件完整新版全部代码")
-            Map<String, String> fileCodeMap,
-            ToolContext toolContext
-    ) {
-        // 1. 顶层参数校验
-        if (fileCodeMap == null || fileCodeMap.isEmpty()) {
-            return errorResult(ToolErrType.PARAM_EMPTY, "fileCodeMap不能为空，至少传入一个待修改文件");
-        }
-
-        String workspaceRoot = (String) toolContext.getContext().get("workspaceRoot");
-        String workspaceId = (String) toolContext.getContext().get("workspaceId");
-        Map<String, String> classPathMap = projectIndexScanner.getClassMap(workspaceId);
-
-        MultiFileDiffResult multiFileDiffResult = new MultiFileDiffResult();
-        List<FileDiffResult> fileDiffResultList = new ArrayList<>();
-
-        try {
-            // 2. 循环处理每一个待对比文件
-            for (Map.Entry<String, String> entry : fileCodeMap.entrySet()) {
-                String pathOrClassName = entry.getKey();
-                String newFullCode = entry.getValue();
-
-                // 子参数校验：新版代码不能为空
-                if (newFullCode == null || newFullCode.isBlank()) {
-                    return errorResult(ToolErrType.PARAM_EMPTY, "文件[" + pathOrClassName + "]新版代码不能为空，必须传入完整文件代码");
-                }
-
-                // 类名自动映射真实文件路径（和readFileByRange逻辑统一）
-                String realRelativePath = classPathMap.getOrDefault(pathOrClassName, pathOrClassName);
-
-                // 安全路径校验，拦截越界、非法路径
-                Path fullFileAbsPath = resolveSafePath(realRelativePath, toolContext);
-                if (fullFileAbsPath == null) {
-                    return errorResult(ToolErrType.PATH_INVALID, "文件路径非法或超出工作区范围：" + realRelativePath);
-                }
-                // 路径存在，但不是普通文件（文件夹/软链接）才报错；文件不存在放行做新增
-                if (Files.exists(fullFileAbsPath) && !Files.isRegularFile(fullFileAbsPath)) {
-                    return errorResult(ToolErrType.PATH_INVALID, "目标路径不是普通文件：" + realRelativePath);
-                }
-
-                List<String> oldLines;
-                if (Files.exists(fullFileAbsPath)) {
-                    oldLines = Files.readAllLines(fullFileAbsPath);
-                } else {
-                    oldLines = new ArrayList<>();
-                }
-                String oldOriginCode = String.join("\n", oldLines);
-
-                // 3. 调用Diff工具生成单文件结构化差异
-                FileDiffResult singleFileDiff = diffUtil.generateSingleFileDiff(realRelativePath, oldOriginCode, newFullCode);
-                // 过滤无任何变更的文件，不加入渲染列表
-                if (singleFileDiff.getHasChange()) {
-                    fileDiffResultList.add(singleFileDiff);
-                }
-            }
-
-            // 4. 组装顶层统一多文件容器
-            multiFileDiffResult.setFileDiffList(fileDiffResultList);
-            multiFileDiffResult.setHasAnyChange(!fileDiffResultList.isEmpty());
-
-            // 5. 序列化JSON，包裹前端唯一识别标记 <!--DIFF_ALL:xxx-->
-            String diffJsonStr = objectMapper.writeValueAsString(multiFileDiffResult);
-            String diffTag = "<!--DIFF_ALL:" + diffJsonStr + "-->";
-
-            // 读取统计埋点（和readFileByRange保持统一埋点逻辑）
-            statService.recordFileRead(workspaceId);
-
-            // 标准返回格式，附带说明+diff标记
-            if (!multiFileDiffResult.getHasAnyChange()) {
-                return "所有传入文件对比后无代码变更，无需展示差异面板\n" + diffTag;
-            }
-            return String.format(
-                    "已生成%d个文件代码差异，前端将自动展示左右分栏对比面板，可勾选变更后应用写入文件\n%s",
-                    fileDiffResultList.size(),
-                    diffTag
-            );
-
-        } catch (JsonProcessingException e) {
-            log.error("batchGenerateDiff JSON序列化失败 workspaceId={}", workspaceId, e);
-            return errorResult(ToolErrType.SERIALIZE_ERROR, "差异数据序列化失败：" + e.getMessage());
-        } catch (SecurityException e) {
-            log.error("batchGenerateDiff 文件权限异常 workspaceId={}", workspaceId, e);
-            return errorResult(ToolErrType.IO_PERMISSION_ERROR, "文件读写权限不足：" + e.getMessage());
-        } catch (Exception e) {
-            log.error("batchGenerateDiff 生成差异异常 workspaceId={}", workspaceId, e);
-            return errorResult(ToolErrType.IO_UNKNOWN, "生成文件差异失败：" + e.getMessage());
-        }
-    }
-
-    // ========== 内部辅助方法 ==========
 
     /**
      * 从 ToolContext 获取完整工作区根目录 = workspaceRoot + workspaceId
