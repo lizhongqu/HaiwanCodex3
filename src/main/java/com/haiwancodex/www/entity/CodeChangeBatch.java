@@ -7,7 +7,7 @@ import lombok.Data;
 public class CodeChangeBatch {
     private Long id;
     private String workspaceId;
-    private Long messageId;
+    private String messageId;
     private String desc;
     private Long promptTokens;
     private Long completionTokens;

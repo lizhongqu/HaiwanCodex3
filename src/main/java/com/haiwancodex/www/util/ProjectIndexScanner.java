@@ -163,10 +163,23 @@ public class ProjectIndexScanner {
 
         try (Stream<Path> stream = Files.walk(current, maxDepth)) {
             stream.filter(p -> !p.equals(wsRoot))
-                    .filter(p -> {
-                        String name = p.getFileName().toString();
+                    // 关键：先判断整条路径是否包含黑名单目录，直接整条分支跳过
+                    .filter(path -> {
+                        String pathStr = path.toString().replace("\\", "/");
+                        // 拦截 .git 整个分支
+                        if (pathStr.contains("/.git/")) {
+                            return false;
+                        }
+                        String name = path.getFileName().toString();
+                        // 拦截所有 . 开头目录
+                        if (name.startsWith(".")) {
+                            return false;
+                        }
+                        // 黑名单目录完全匹配拦截
                         for (String ignore : IGNORE_DIR) {
-                            if (name.equals(ignore)) return false;
+                            if (name.equals(ignore)) {
+                                return false;
+                            }
                         }
                         return true;
                     })

@@ -23,4 +23,5 @@ public class ChatRequest {
     private Double temperature = 0.2;
     private Double topP = 0.1;
     private Integer numCtx = 8192;
+    private String messageId;
 }

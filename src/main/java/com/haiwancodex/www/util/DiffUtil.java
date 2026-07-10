@@ -1,14 +1,20 @@
 package com.haiwancodex.www.util;
 
+import cn.hutool.core.util.ReUtil;
+import com.alibaba.fastjson2.JSON;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
 import com.github.difflib.patch.Chunk;
 import com.haiwancodex.www.dto.CodeDiffItem;
+import com.haiwancodex.www.dto.FileDiffItem;
+import com.haiwancodex.www.dto.FileDiffRaw;
 import com.haiwancodex.www.dto.FileDiffResult;
+import lombok.Data;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 @Component
 public class DiffUtil {
@@ -68,5 +74,47 @@ public class DiffUtil {
         result.setDiffList(diffItemList);
         result.setHasChange(!diffItemList.isEmpty());
         return result;
+    }
+
+    /**
+     * 从完整AI文本中提取 [DIFF] ... [/DIFF] 中间的JSON
+     */
+    public static String extractDiffContent(String fullText) {
+        Pattern pattern = Pattern.compile("\\[DIFF\\]([\\s\\S]*?)\\[/DIFF\\]");
+        String match = ReUtil.getGroup1(pattern, fullText);
+        if (match == null || match.isBlank()) {
+            return null;
+        }
+        return match.trim();
+    }
+
+    /**
+     * 把diff json字符串 转成文件变更列表
+     */
+    public static List<FileDiffRaw> parseDiffJson(String diffJson) {
+        List<FileDiffRaw> result = new ArrayList<>();
+        if (diffJson == null || diffJson.isBlank()) {
+            return result;
+        }
+        // 外层结构 {fileDiffList: [ {pathOrClassName, diffJson} ]}
+        DiffRoot root = JSON.parseObject(diffJson, DiffRoot.class);
+        if (root == null || root.getFileDiffList() == null || root.getFileDiffList().isEmpty()) {
+            return result;
+        }
+        for (FileDiffItem item : root.getFileDiffList()) {
+            FileDiffRaw raw = new FileDiffRaw();
+            raw.setPathOrClassName(item.getPathOrClassName());
+            // 阶段1：只存最终完整新代码，不计算行diff
+            raw.setFullNewCode(item.getFullNewCode());
+            raw.setWholeFileDelete(item.isWholeDelete());
+            result.add(raw);
+        }
+        return result;
+    }
+
+    // 配套内部DTO
+    @Data
+    static class DiffRoot {
+        private List<FileDiffItem> fileDiffList;
     }
 }

@@ -2,48 +2,41 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.haiwancodex.www.mapper.CodeChangeFileMapper">
-    <resultMap id="BaseResultMap" type="com.haiwancodex.www.entity.CodeChangeFile">
-        <id column="id" property="id"/>
-        <result column="batch_id" property="batchId"/>
-        <result column="file_path" property="filePath"/>
-        <result column="new_code" property="newCode"/>
-        <result column="is_delete_file" property="isDeleteFile"/>
-        <result column="created_at" property="createdAt"/>
-    </resultMap>
 
-    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO code_change_file
-        (batch_id, file_path, new_code, is_delete_file)
-        VALUES (#{batchId},#{filePath},#{newCode},#{isDeleteFile})
-    </insert>
-
+    <!-- 批量插入文件变更 -->
     <insert id="insertBatch">
-        INSERT INTO code_change_file (batch_id, file_path, new_code, is_delete_file)
+        INSERT INTO code_change_file
+        (batch_id, file_path, new_code, is_delete_file, created_at)
         VALUES
         <foreach collection="list" item="item" separator=",">
-            (#{item.batchId},#{item.filePath},#{item.newCode},#{item.isDeleteFile})
+            (#{item.batchId}, #{item.filePath}, #{item.newCode}, #{item.isDeleteFile}, NOW())
         </foreach>
     </insert>
 
-    <select id="selectByBatchId" resultMap="BaseResultMap">
-        SELECT * FROM code_change_file WHERE batch_id = #{batchId}
-    </select>
-
-    <select id="selectById" resultMap="BaseResultMap">
-        SELECT * FROM code_change_file WHERE id = #{id}
-    </select>
-
-    <update id="updateById">
-        UPDATE code_change_file
-        SET batch_id=#{batchId},file_path=#{filePath},new_code=#{newCode},is_delete_file=#{isDeleteFile}
-        WHERE id=#{id}
-    </update>
-
-    <delete id="deleteById">
-        DELETE FROM code_change_file WHERE id=#{id}
-    </delete>
-
+    <!-- 根据批次ID删除关联文件 -->
     <delete id="deleteByBatchId">
         DELETE FROM code_change_file WHERE batch_id = #{batchId}
     </delete>
+
+    <!-- 清空工作区所有文件记录 -->
+    <delete id="deleteAllByWs">
+        DELETE f FROM code_change_file f
+        LEFT JOIN code_change_batch b ON f.batch_id = b.id
+        WHERE b.workspace_id = #{workspaceId}
+    </delete>
+
+    <!-- 查询单批次所有文件 -->
+    <select id="selectByBatchId" resultType="com.haiwancodex.www.entity.CodeChangeFile">
+        SELECT id, batch_id, file_path, new_code, is_delete_file, created_at
+        FROM code_change_file
+        WHERE batch_id = #{batchId}
+        ORDER BY file_path ASC
+    </select>
+
+    <select id="selectById" resultType="com.haiwancodex.www.entity.CodeChangeFile">
+        SELECT id, batch_id, file_path, new_code, is_delete_file AS isDeleteFile, created_at AS createdAt
+        FROM code_change_file
+        WHERE id = #{fileId}
+    </select>
+
 </mapper>
