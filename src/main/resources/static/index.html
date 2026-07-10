@@ -284,6 +284,30 @@
             color: #c0c4cc;
             font-size: 13px;
         }
+        .msg-token-footer {
+            margin-top: 10px;
+            padding: 6px 10px;
+            background: #fafbfc;
+            border-radius: 6px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            line-height: 1.4;
+            width: fit-content;
+        }
+
+        .msg-token-footer span {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+            color: #909399;
+        }
+
+        .msg-token-footer span:nth-child(1) b { color: #409eff; font-weight: 500; } /* 输入：蓝 */
+        .msg-token-footer span:nth-child(2) b { color: #67c23a; font-weight: 500; } /* 输出：绿 */
+        .msg-token-footer span:nth-child(3) b { color: #606266; font-weight: 500; } /* 总计：深灰 */
     </style>
 </head>
 <body>
@@ -366,14 +390,15 @@
                         <el-icon v-if="msg.role === 'user'"><User /></el-icon>
                         <el-icon v-else><Monitor /></el-icon>
                     </div>
-                    <div class="bubble">{{ msg.content }}</div>
-                </div>
-                <!-- 消息底部Token + 工作台入口 -->
-                <div v-if="msg.role === 'assistant' && msg.selfToken.total > 0" class="msg-footer">
-                    <span>本次消耗 {{ msg.selfToken.total }} Token</span>
-                    <span v-if="msg.fileChangeCount > 0" class="go-workbench" @click="openWorkbench">
-                        生成 {{ msg.fileChangeCount }} 个文件变更，前往工作台查看
-                    </span>
+                    <div class="bubble">
+                        <div>{{ msg.content }}</div>
+                        <!-- 消息底部Token展示，仅助手消息且有数据时显示 -->
+                        <div v-if="msg.role === 'assistant' && msg.selfToken && msg.selfToken.total > 0" class="msg-token-footer">
+                            <span>输入 <b>{{ msg.selfToken.in }}</b></span>
+                            <span>输出 <b>{{ msg.selfToken.out }}</b></span>
+                            <span>总计 <b>{{ msg.selfToken.total }}</b></span>
+                        </div>
+                    </div>
                 </div>
             </div>
             <!-- AI加载中 -->
@@ -444,9 +469,9 @@
             const messages = ref([]);
             const inputMessage = ref('');
             const isLoading = ref(false);
-            const temperature = ref(0.3);
-            const topP = ref(0.9);
-            const numCtx = ref(4096);
+            const temperature = ref(0.2);
+            const topP = ref(0.1);
+            const numCtx = ref(32768);
             const scrollbarRef = ref(null);
 
             // Token统计变量
@@ -551,8 +576,10 @@
                                 if (currentEvent === 'message' || currentEvent === '') {
                                     aiMsg.content += d;
                                 } else if (currentEvent === 'done') {
+
                                     try {
                                         const doneData = JSON.parse(d);
+
                                         aiMsg.selfToken.in = doneData.promptTokens || 0;
                                         aiMsg.selfToken.out = doneData.completionTokens || 0;
                                         aiMsg.selfToken.total = doneData.totalTokens || 0;

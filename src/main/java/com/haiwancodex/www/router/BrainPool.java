@@ -88,12 +88,12 @@ public class BrainPool {
                 .timeout(Duration.ofSeconds(90))
                 // 逐块处理：原样下发，只拼接原始全文，不做任何清洗
                 .handle((ChatResponse response, SynchronousSink<ServerSentEvent<String>> sink) -> {
+                    finalResponse.set(response);
                     String text = response.getResult().getOutput().getText();
                     if (text == null || text.isBlank()) {
                         return;
                     }
                     sink.next(buildSseEventWithEvent("message", text));
-                    finalResponse.set(response);
                 })
                 // 过滤空无效事件，减少前端无用推送
                 .filter(event -> event.data() != null && !event.data().isBlank())
@@ -193,13 +193,13 @@ public class BrainPool {
                 .timeout(Duration.ofSeconds(90))
                 // 逐块处理：原样下发，只拼接原始全文，不做任何清洗
                 .handle((ChatResponse response, SynchronousSink<ServerSentEvent<String>> sink) -> {
+                    finalResponse.set(response);
                     String text = response.getResult().getOutput().getText();
                     if (text == null || text.isBlank()) {
                         return;
                     }
                     fullAiText.append(text);
                     sink.next(buildSseEventWithEvent("message", text));
-                    finalResponse.set(response);
                 })
                 // 过滤空无效事件，减少前端无用推送
                 .filter(event -> event.data() != null && !event.data().isBlank())
