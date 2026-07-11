@@ -37,7 +37,7 @@ public class CodexAdminController {
     /**
      * 删除单个会话全部历史
      */
-    @DeleteMapping("/chat/{workspaceId}")
+    @DeleteMapping("/chat/history/{workspaceId}")
     public String clearChatHistory(@PathVariable String workspaceId) {
         chatMemory.clear(workspaceId);
         // 同时清理分类器缓存会话

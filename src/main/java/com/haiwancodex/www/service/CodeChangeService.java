@@ -52,6 +52,10 @@ public class CodeChangeService {
         batchMapper.deleteAllByWs(workspaceId);
     }
 
+    public List<CodeChangeBatch> listBatchByWorkspaceId(String workspaceId) {
+        return batchMapper.selectByWorkspaceId(workspaceId);
+    }
+
     /**
      * 根据批次ID查询该批次全部修改文件
      */

@@ -1,7 +1,9 @@
 package com.haiwancodex.www.controller;
 
+import com.haiwancodex.www.entity.CodeChangeBatch;
 import com.haiwancodex.www.entity.CodeChangeFile;
 import com.haiwancodex.www.service.CodeChangeService;
+import com.haiwancodex.www.service.DiffService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,6 +15,21 @@ import java.util.List;
 public class CodeChangeController {
 
     private final CodeChangeService codeChangeService;
+    private final DiffService diffService;
+
+    @GetMapping("/file/diff")
+    public String getFileDiff(@RequestParam Long fileId) {
+        CodeChangeFile file = codeChangeService.getFileById(fileId);
+        if (file == null) {
+            throw new RuntimeException("文件记录不存在");
+        }
+        return diffService.computeDiff(file);
+    }
+
+    @GetMapping("/batch/list")
+    public List<CodeChangeBatch> listBatches(@RequestParam String workspaceId) {
+        return codeChangeService.listBatchByWorkspaceId(workspaceId);
+    }
 
     /**
      * 获取指定批次下所有文件代码

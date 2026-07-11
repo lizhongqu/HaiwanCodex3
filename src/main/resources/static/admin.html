@@ -266,7 +266,7 @@
                 if (!base.wsId) return ElMessage.warning("请输入 workspaceId");
                 loading.clearChat = true;
                 try {
-                    await axios.delete(`/chat/${base.wsId}`);
+                    await axios.delete(`/chat/history/${base.wsId}`);
                     chatHistory.value = [];
                     ElMessage.success("会话已清空");
                 } finally {

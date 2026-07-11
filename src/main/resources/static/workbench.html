@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>代码工作台 - HaiwanCodex3</title>
+    <!-- Element Plus 样式 -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <style>
+        body { margin: 0; padding: 0; }
+        #app { height: 100vh; display: flex; flex-direction: column; }
+        .main-container { display: flex; flex: 1; overflow: hidden; }
+        .left-panel {
+            width: 300px;
+            border-right: 1px solid #dcdfe6;
+            overflow-y: auto;
+            background: #f5f7fa;
+        }
+        .right-panel { flex: 1; padding: 20px; overflow-y: auto; }
+        .batch-item {
+            padding: 12px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid #e4e7ed;
+            transition: background 0.2s;
+        }
+        .batch-item:hover { background: #ecf5ff; }
+        .batch-item.active { background: #d9ecff; color: #409eff; }
+        .file-item {
+            padding: 8px;
+            cursor: pointer;
+            margin: 4px 0;
+        }
+        .file-item:hover { background: #f0f2f5; }
+        pre.diff-view {
+            background: #fafafa;
+            padding: 15px;
+            border: 1px solid #e4e7ed;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <el-header style="background:#409eff; color:white; display:flex; align-items:center; padding:0 20px;">
+        <h2 style="margin:0;">HaiwanCodex3 工作台</h2>
+    </el-header>
+    <div class="main-container">
+        <!-- 左侧批次列表 -->
+        <div class="left-panel">
+            <div v-for="batch in batches" :key="batch.id"
+                 class="batch-item" :class="{ active: selectedBatch?.id === batch.id }"
+                 @click="selectBatch(batch)">
+                <div style="font-weight:bold;">{{ batch.desc || '无描述' }}</div>
+                <div style="font-size:12px; color:#909399;">{{ batch.createdAt }}</div>
+            </div>
+            <div v-if="batches.length === 0" style="text-align:center; padding:20px; color:#909399;">
+                暂无变更批次
+            </div>
+        </div>
+        <!-- 右侧详情 -->
+        <div class="right-panel">
+            <template v-if="selectedBatch">
+                <h3>批次文件列表</h3>
+                <el-table :data="files" style="width: 100%" @row-click="handleFileClick" highlight-current-row>
+                    <el-table-column prop="filePath" label="文件路径"></el-table-column>
+                    <el-table-column prop="isDeleteFile" label="操作" width="80">
+                        <template #default="scope">
+                            <el-tag v-if="scope.row.isDeleteFile" type="danger">删除</el-tag>
+                            <el-tag v-else type="success">新增/修改</el-tag>
+                        </template>
+                    </el-table-column>
+                </el-table>
+                <div v-if="currentFile" style="margin-top:20px;">
+                    <h4>差异预览：{{ currentFile.filePath }}</h4>
+                    <pre class="diff-view" v-html="highlightDiff(diffText)"></pre>
+                </div>
+            </template>
+            <el-empty v-else description="请从左侧选择一个批次" />
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<script src="https://unpkg.com/element-plus"></script>
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+<script>
+    const { createApp, ref } = Vue;
+
+    createApp({
+        setup() {
+            const batches = ref([]);
+            const selectedBatch = ref(null);
+            const files = ref([]);
+            const currentFile = ref(null);
+            const diffText = ref('');
+
+            // 加载批次列表（假设工作空间ID暂时固定为 "default-ws"）
+            const loadBatches = async () => {
+                // 你需要一个获取批次列表的接口，目前你可能只实现了按workspaceId查询
+                // 我们先假定 workspaceId = "default"，你可以根据实际情况调整
+                const wsId = "HaiwanCodex3"; // 替换成真实获取逻辑
+                try {
+                    const res = await axios.get('/codex/change/batch/list?workspaceId=' + wsId);
+                    batches.value = res.data;
+                } catch (e) {
+                    console.error('加载批次失败', e);
+                }
+            };
+
+            const selectBatch = async (batch) => {
+                selectedBatch.value = batch;
+                currentFile.value = null;
+                diffText.value = '';
+                // 加载批次下的文件
+                try {
+                    const res = await axios.get('/codex/change/file/list?batchId=' + batch.id);
+                    files.value = res.data;
+                } catch (e) {
+                    console.error('加载文件列表失败', e);
+                }
+            };
+
+            const handleFileClick = async (file) => {
+                currentFile.value = file;
+                try {
+                    const res = await axios.get('/codex/change/file/diff?fileId=' + file.id);
+                    diffText.value = res.data;
+                } catch (e) {
+                    console.error('加载差异失败', e);
+                    diffText.value = '获取差异失败：' + e.message;
+                }
+            };
+
+            // 简单的高亮：将 + - 符号用颜色标记
+            const highlightDiff = (text) => {
+                if (!text) return '';
+                return text
+                    .replace(/^\+.*$/gm, '<span style="color:green;">$&</span>')
+                    .replace(/^\-.*$/gm, '<span style="color:red;">$&</span>')
+                    .replace(/^@.*$/gm, '<span style="color:#409eff;">$&</span>');
+            };
+
+            // 初始化加载
+            loadBatches();
+
+            return { batches, selectedBatch, files, currentFile, diffText, selectBatch, handleFileClick, highlightDiff };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

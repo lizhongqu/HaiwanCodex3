@@ -72,10 +72,10 @@ public class WorkspaceFileTools {
                     .strip();
 
             // 超长截断，杜绝万级Token
-            if (content.length() > MAX_FILE_CHAR) {
-                content = content.substring(0, MAX_FILE_CHAR)
-                        + "\n【文件内容过长已截断，缩小读取范围改用readFileByRange指定行读取】";
-            }
+//            if (content.length() > MAX_FILE_CHAR) {
+//                content = content.substring(0, MAX_FILE_CHAR)
+//                        + "\n【文件内容过长已截断，缩小读取范围改用readFileByRange指定行读取】";
+//            }
 
             // 统计埋点
             statService.recordFileRead(workspaceId);

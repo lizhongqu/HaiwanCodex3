@@ -662,14 +662,105 @@
             };
 
             // 占位方法
-            const loadHistory = () => {
-                ElementPlus.ElMessage.info('历史记录功能开发中');
+            const loadHistory = async () => {
+                if (!workspaceId.value) {
+                    ElementPlus.ElMessage.warning('请先选择工作区');
+                    return;
+                }
+
+                try {
+                    const resp = await fetch(`/admin/codex/chat/history/${workspaceId.value}`);
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const historyList = await resp.json();
+
+                    // 空数据兜底
+                    if (!Array.isArray(historyList) || historyList.length === 0) {
+                        messages.value = [];
+                        tokenIn.value = 0;
+                        tokenOut.value = 0;
+                        tokenTotal.value = 0;
+                        ElementPlus.ElMessage.info('暂无历史对话');
+                        return;
+                    }
+
+                    let totalIn = 0;
+                    let totalOut = 0;
+                    let totalAll = 0;
+
+                    // 后端字段映射到前端消息格式
+                    messages.value = historyList.map(item => {
+                        const content = item.text || '';
+                        const type = item.messageType || '';
+
+                        // 用户消息
+                        if (type === 'USER') {
+                            return {
+                                role: 'user',
+                                content: content
+                            };
+                        }
+
+                        // 助手消息
+                        if (type === 'ASSISTANT') {
+                            // 历史接口暂未返回token数据，默认填0
+                            const inToken = 0;
+                            const outToken = 0;
+                            const sumToken = 0;
+
+                            totalIn += inToken;
+                            totalOut += outToken;
+                            totalAll += sumToken;
+
+                            return {
+                                role: 'assistant',
+                                content: content,
+                                selfToken: {
+                                    in: inToken,
+                                    out: outToken,
+                                    total: sumToken
+                                },
+                                fileChangeCount: 0,
+                                messageId: null
+                            };
+                        }
+
+                        // 其他未知类型默认按助手消息处理
+                        return {
+                            role: 'assistant',
+                            content: content
+                        };
+                    });
+
+                    // 更新全局Token汇总
+                    tokenIn.value = totalIn;
+                    tokenOut.value = totalOut;
+                    tokenTotal.value = totalAll;
+
+                    // DOM渲染完成后滚动到底部
+                    nextTick(() => scrollToBottom());
+                    ElementPlus.ElMessage.success('历史记录加载成功');
+                } catch (err) {
+                    console.error('加载历史记录失败', err);
+                    ElementPlus.ElMessage.error('加载失败：' + err.message);
+                }
             };
-            const clearHistory = () => {
-                messages.value = [];
-                tokenIn.value = 0;
-                tokenOut.value = 0;
-                tokenTotal.value = 0;
+            const clearHistory = async () => {
+                try {
+                    // 有后端清空接口就打开注释，没有就删掉这段
+                    const resp = await fetch(`/admin/codex/chat/history/${workspaceId.value}`, {
+                        method: 'DELETE'
+                    });
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+                    messages.value = [];
+                    tokenIn.value = 0;
+                    tokenOut.value = 0;
+                    tokenTotal.value = 0;
+                    ElementPlus.ElMessage.success('对话记录已清空');
+                } catch (err) {
+                    console.error('清空失败', err);
+                    ElementPlus.ElMessage.error('清空失败：' + err.message);
+                }
             };
             const refreshTokenStat = () => {
                 ElementPlus.ElMessage.info('已刷新');
