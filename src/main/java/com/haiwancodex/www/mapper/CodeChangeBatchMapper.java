@@ -24,6 +24,13 @@ public interface CodeChangeBatchMapper {
      */
     List<CodeChangeBatch> selectByWorkspaceId(@Param("workspaceId") String workspaceId);
 
+    List<CodeChangeBatch> selectByConditions(
+            @Param("workspaceId") String workspaceId,
+            @Param("desc") String desc,
+            @Param("startTime") String startTime,
+            @Param("endTime") String endTime
+    );
+
     /**
      * 根据工作空间ID清空所有批次
      */

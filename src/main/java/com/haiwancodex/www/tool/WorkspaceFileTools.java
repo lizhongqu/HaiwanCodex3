@@ -119,7 +119,7 @@ public class WorkspaceFileTools {
 
 
     // -------------------- 写文件（覆盖） --------------------
-    @Tool(description = "将内容写入指定文件（覆盖模式），路径相对于工作区根目录，会自动创建父目录")
+//    @Tool(description = "将内容写入指定文件（覆盖模式），路径相对于工作区根目录，会自动创建父目录")
     public String writeFile(
             @ToolParam(description = "相对于工作区的文件路径") String path,
             @ToolParam(description = "要写入的内容") String content,
@@ -142,7 +142,7 @@ public class WorkspaceFileTools {
     }
 
     // -------------------- 追加内容到文件 --------------------
-    @Tool(description = "向文件末尾追加内容，路径相对于工作区根目录，若文件不存在则创建")
+    // @Tool(description = "向文件末尾追加内容，路径相对于工作区根目录，若文件不存在则创建")
     public String appendToFile(
             @ToolParam(description = "相对于工作区的文件路径") String path,
             @ToolParam(description = "要追加的内容") String content,
@@ -224,7 +224,7 @@ public class WorkspaceFileTools {
     }
 
     // -------------------- 创建目录 --------------------
-    @Tool(description = "创建目录（包括必要的父目录），路径相对于工作区根目录")
+    // @Tool(description = "创建目录（包括必要的父目录），路径相对于工作区根目录")
     public String createDirectory(
             @ToolParam(description = "相对于工作区的目录路径") String path,
             ToolContext toolContext) {
@@ -243,7 +243,7 @@ public class WorkspaceFileTools {
     }
 
     // -------------------- 删除文件/空目录 --------------------
-    @Tool(description = "删除指定文件或空目录，路径相对于工作区根目录")
+    // @Tool(description = "删除指定文件或空目录，路径相对于工作区根目录")
     public String deleteFile(
             @ToolParam(description = "相对于工作区的文件或空目录路径") String path,
             ToolContext toolContext) {
@@ -266,7 +266,7 @@ public class WorkspaceFileTools {
     }
 
     // -------------------- 强制删除（递归） --------------------
-    @Tool(description = "强制删除指定文件或目录（包括其所有内容），路径相对于工作区根目录")
+    // @Tool(description = "强制删除指定文件或目录（包括其所有内容），路径相对于工作区根目录")
     public String deleteForce(
             @ToolParam(description = "相对于工作区的路径") String path,
             ToolContext toolContext) {
@@ -298,7 +298,7 @@ public class WorkspaceFileTools {
     }
 
     // -------------------- 移动/重命名 --------------------
-    @Tool(description = "移动或重命名文件/目录，源路径和目标路径均相对于工作区根目录")
+    // @Tool(description = "移动或重命名文件/目录，源路径和目标路径均相对于工作区根目录")
     public String moveFile(
             @ToolParam(description = "源路径") String source,
             @ToolParam(description = "目标路径") String target,
@@ -323,7 +323,7 @@ public class WorkspaceFileTools {
     }
 
     // -------------------- 复制文件 --------------------
-    @Tool(description = "复制文件或目录（递归），源路径和目标路径均相对于工作区根目录")
+    // @Tool(description = "复制文件或目录（递归），源路径和目标路径均相对于工作区根目录")
     public String copyFile(
             @ToolParam(description = "源路径") String source,
             @ToolParam(description = "目标路径") String target,

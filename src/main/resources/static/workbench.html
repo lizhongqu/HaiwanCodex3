@@ -14,6 +14,18 @@
             border-right: 1px solid #dcdfe6;
             overflow-y: auto;
             background: #f5f7fa;
+            display: flex;
+            flex-direction: column;
+        }
+        .query-area {
+            padding: 12px;
+            border-bottom: 1px solid #dcdfe6;
+            background: #fff;
+            flex-shrink: 0;
+        }
+        .batch-list-area {
+            flex: 1;
+            overflow-y: auto;
         }
         .right-panel { flex: 1; padding: 20px; overflow-y: auto; }
         .batch-item {
@@ -24,19 +36,66 @@
         }
         .batch-item:hover { background: #ecf5ff; }
         .batch-item.active { background: #d9ecff; color: #409eff; }
-        .file-item {
-            padding: 8px;
-            cursor: pointer;
-            margin: 4px 0;
-        }
-        .file-item:hover { background: #f0f2f5; }
-        pre.diff-view {
-            background: #fafafa;
-            padding: 15px;
+
+        /* diff 表格样式 */
+        .diff-table-container {
             border: 1px solid #e4e7ed;
             border-radius: 4px;
+            max-height: 600px;
+            overflow: auto;
+            font-family: 'Consolas', monospace;
+            font-size: 14px;               /* 字体调大 */
+        }
+        .diff-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .diff-table td {
+            padding: 2px 6px;
+            vertical-align: top;
+            border-bottom: 1px solid #eee;
+        }
+        .diff-line-num {
+            color: #888;
+            min-width: 25px;               /* 行号列变窄 */
+            width: 25px;
+            text-align: right;
+            user-select: none;
+            background: #f5f7fa;
+            padding: 2px 4px;
+            font-size: 13px;              /* 行号稍小一点保持层次 */
+        }
+        .diff-actions-middle {
+            width: 30px;
+            text-align: center;
+            vertical-align: middle;
+            background: #fff;
+        }
+        .diff-content pre {
+            margin: 0;
             white-space: pre-wrap;
-            font-family: monospace;
+            word-break: break-all;
+            font-size: 14px;               /* 内容文字调大 */
+        }
+        .diff-row-insert { background-color: #e6ffed; }
+        .diff-row-delete { background-color: #ffeef0; }
+        .diff-row-equal { background-color: #fff; }
+        .diff-row-empty { background-color: #fafafa; color: #999; }
+        .diff-row-insert .diff-content { background-color: #dcffe4; }
+        .diff-row-delete .diff-content { background-color: #ffdce0; }
+
+        .accept-btn {
+            cursor: pointer;
+            color: #409eff;
+            font-weight: bold;
+            border: none;
+            background: none;
+            font-size: 18px;               /* 箭头加大 */
+            line-height: 1;
+            padding: 0;
+        }
+        .accept-btn:hover {
+            color: #337ecc;
         }
     </style>
 </head>
@@ -48,16 +107,31 @@
     <div class="main-container">
         <!-- 左侧批次列表 -->
         <div class="left-panel">
-            <div v-for="batch in batches" :key="batch.id"
-                 class="batch-item" :class="{ active: selectedBatch?.id === batch.id }"
-                 @click="selectBatch(batch)">
-                <div style="font-weight:bold;">{{ batch.desc || '无描述' }}</div>
-                <div style="font-size:12px; color:#909399;">{{ batch.createdAt }}</div>
+            <div class="query-area">
+                <el-input v-model="workspaceRoot" placeholder="工作空间根目录，如 D:\\ideaSpace" size="small" clearable style="margin-bottom:6px;" ></el-input>
+                <el-input v-model="workspaceId" placeholder="工作空间ID" size="small" clearable style="margin-bottom:6px;" ></el-input>
+                <el-input v-model="searchDesc" placeholder="描述关键字" size="small" clearable @keyup.enter="searchBatches" style="margin-bottom:6px;" ></el-input>
+                <div style="display: flex; gap: 8px; margin-bottom: 6px;">
+                    <el-date-picker v-model="searchStartTime" type="date" placeholder="开始日期"
+                                    value-format="YYYY-MM-DD" size="small" style="flex:1" ></el-date-picker>
+                    <el-date-picker v-model="searchEndTime" type="date" placeholder="结束日期"
+                                    value-format="YYYY-MM-DD" size="small" style="flex:1" ></el-date-picker>
+                </div>
+                <el-button type="primary" size="small" @click="searchBatches" style="width:100%;">查询批次</el-button>
             </div>
-            <div v-if="batches.length === 0" style="text-align:center; padding:20px; color:#909399;">
-                暂无变更批次
+            <div class="batch-list-area">
+                <div v-for="batch in batches" :key="batch.id"
+                     class="batch-item" :class="{ active: selectedBatch?.id === batch.id }"
+                     @click="selectBatch(batch)">
+                    <div style="font-weight:bold;">{{ batch.desc || '无描述' }}</div>
+                    <div style="font-size:12px; color:#909399;">{{ batch.createdAt }}</div>
+                </div>
+                <div v-if="batches.length === 0" style="text-align:center; padding:20px; color:#909399;">
+                    暂无变更批次
+                </div>
             </div>
         </div>
+
         <!-- 右侧详情 -->
         <div class="right-panel">
             <template v-if="selectedBatch">
@@ -71,12 +145,47 @@
                         </template>
                     </el-table-column>
                 </el-table>
+
+                <!-- Diff 交互区域 -->
                 <div v-if="currentFile" style="margin-top:20px;">
-                    <h4>差异预览：{{ currentFile.filePath }}</h4>
-                    <pre class="diff-view" v-html="highlightDiff(diffText)"></pre>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                        <h4>{{ currentFile.filePath }}</h4>
+                        <div>
+                            <el-button size="small" @click="acceptAll">全部接受</el-button>
+                            <el-button size="small" @click="rejectAll">全部拒绝</el-button>
+                            <el-button size="small" type="primary" @click="saveDraft">保存更改</el-button>
+                        </div>
+                    </div>
+
+                    <!-- diff 表格 -->
+                    <div class="diff-table-container" v-if="diffBlocks.length > 0 || draftLines.length > 0">
+                        <table class="diff-table">
+                            <tbody>
+                            <template v-for="(row, index) in renderRows" :key="index">
+                                <tr :class="row.rowClass">
+                                    <!-- 左侧行号 -->
+                                    <td class="diff-line-num">{{ row.leftLineNum || '' }}</td>
+                                    <!-- 左侧内容 -->
+                                    <td class="diff-content"><pre>{{ row.leftContent }}</pre></td>
+                                    <!-- 中间操作按钮（箭头） -->
+                                    <td class="diff-actions-middle">
+                                        <button v-if="row.block && (row.block.type === 'insert' || row.block.type === 'delete')"
+                                                class="accept-btn" @click="acceptBlock(row.blockIndex)"
+                                                title="接受此变更">➤</button>
+                                    </td>
+                                    <!-- 右侧行号 -->
+                                    <td class="diff-line-num">{{ row.rightLineNum || '' }}</td>
+                                    <!-- 右侧内容 -->
+                                    <td class="diff-content"><pre>{{ row.rightContent }}</pre></td>
+                                </tr>
+                            </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div v-else style="padding:20px; text-align:center; color:#909399;">文件无差异</div>
                 </div>
             </template>
-            <el-empty v-else description="请从左侧选择一个批次" />
+            <el-empty v-else description="请从左侧选择一个批次" ></el-empty>
         </div>
     </div>
 </div>
@@ -84,35 +193,75 @@
 <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 <script src="https://unpkg.com/element-plus"></script>
 <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
 <script>
-    const { createApp, ref } = Vue;
+    const { createApp, ref, computed } = Vue;
+    const { ElMessage, ElMessageBox } = ElementPlus;
 
     createApp({
         setup() {
+            // ---------- 左侧查询相关 ----------
+            const workspaceId = ref('HaiwanCodex3');
+            const workspaceRoot = ref('D:\\ideaSpace');
+            const searchDesc = ref('');
+            const searchStartTime = ref('');
+            const searchEndTime = ref('');
             const batches = ref([]);
             const selectedBatch = ref(null);
             const files = ref([]);
-            const currentFile = ref(null);
-            const diffText = ref('');
 
-            // 加载批次列表（假设工作空间ID暂时固定为 "default-ws"）
-            const loadBatches = async () => {
-                // 你需要一个获取批次列表的接口，目前你可能只实现了按workspaceId查询
-                // 我们先假定 workspaceId = "default"，你可以根据实际情况调整
-                const wsId = "HaiwanCodex3"; // 替换成真实获取逻辑
+            // ---------- 右侧 diff 相关 ----------
+            const currentFile = ref(null);
+            const draftLines = ref([]);      // 草稿内容（行数组）
+            const newLines = ref([]);        // AI 新代码行数组（固定）
+            const diffBlocks = ref([]);      // 差异块
+
+            // 统一换行符（Windows \r\n、旧Mac \r → \n）
+            const normalizeLineEndings = (text) => {
+                if (!text) return '';
+                return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+            };
+
+            // 修复可能存在的双重转义（例如 \\n → \n, \" → "）
+            const fixEscapedString = (str) => {
+                if (!str) return '';
                 try {
-                    const res = await axios.get('/codex/change/batch/list?workspaceId=' + wsId);
+                    // 尝试用 JSON.parse 自动处理（最安全）
+                    return JSON.parse('"' + str + '"');
+                } catch (e) {
+                    // 如果失败，手动替换常见转义
+                    return str.replace(/\\n/g, '\n')
+                        .replace(/\\"/g, '"')
+                        .replace(/\\\\/g, '\\');
+                }
+            };
+
+            // ---------- 左侧：查询批次 ----------
+            const searchBatches = async () => {
+                if (!workspaceId.value) {
+                    batches.value = [];
+                    ElMessage.warning('请输入工作空间ID');
+                    return;
+                }
+                try {
+                    const params = new URLSearchParams();
+                    params.append('workspaceId', workspaceId.value);
+                    if (searchDesc.value) params.append('desc', searchDesc.value);
+                    if (searchStartTime.value) params.append('startTime', searchStartTime.value);
+                    if (searchEndTime.value) params.append('endTime', searchEndTime.value);
+                    const res = await axios.get('/codex/change/batch/list?' + params.toString());
                     batches.value = res.data;
                 } catch (e) {
-                    console.error('加载批次失败', e);
+                    console.error('查询批次失败', e);
                 }
             };
 
             const selectBatch = async (batch) => {
                 selectedBatch.value = batch;
                 currentFile.value = null;
-                diffText.value = '';
-                // 加载批次下的文件
+                draftLines.value = [];
+                newLines.value = [];
+                diffBlocks.value = [];
                 try {
                     const res = await axios.get('/codex/change/file/list?batchId=' + batch.id);
                     files.value = res.data;
@@ -121,30 +270,275 @@
                 }
             };
 
-            const handleFileClick = async (file) => {
+            // ---------- 右侧：文件读取与 diff 计算 ----------
+            const fetchOldCode = async (filePath) => {
+                const res = await axios.get('/codex/change/read/file', {
+                    params: {
+                        path: filePath,
+                        workspaceRoot: workspaceRoot.value,
+                        workspaceId: workspaceId.value
+                    }
+                });
+                return normalizeLineEndings(res.data || '');
+            };
+
+            const fetchNewCode = async (fileId) => {
+                const res = await axios.get('/codex/change/file/detail', { params: { fileId } });
+                const raw = res.data?.newCode || '';
+                // 先解转义，再标准化换行
+                const cleaned = fixEscapedString(raw);
+                return normalizeLineEndings(cleaned);
+            };
+
+            // 计算差异块（使用 diff 库）
+            const computeDiffBlocks = (oldText, newText) => {
+                const oldArr = normalizeLineEndings(oldText).split('\n');
+                const newArr = normalizeLineEndings(newText).split('\n');
+                const diffResult = Diff.diffArrays(oldArr, newArr);
+                const blocks = [];
+                let oldPos = 0;
+                let newPos = 0;
+                for (let part of diffResult) {
+                    const count = part.value.length;
+                    if (part.added) {
+                        blocks.push({
+                            type: 'insert',
+                            oldStart: oldPos,
+                            oldEnd: oldPos,
+                            newStart: newPos,
+                            newEnd: newPos + count,
+                            lines: part.value
+                        });
+                        newPos += count;
+                    } else if (part.removed) {
+                        blocks.push({
+                            type: 'delete',
+                            oldStart: oldPos,
+                            oldEnd: oldPos + count,
+                            newStart: newPos,
+                            newEnd: newPos,
+                            lines: part.value
+                        });
+                        oldPos += count;
+                    } else {
+                        oldPos += count;
+                        newPos += count;
+                    }
+                }
+                return blocks;
+            };
+
+            // 将差异块 + 等同行组合成渲染用的行列表
+            const renderRows = computed(() => {
+                if (draftLines.value.length === 0 && newLines.value.length === 0) return [];
+                const oldArr = draftLines.value;
+                const newArr = newLines.value;
+                const blocks = diffBlocks.value;
+                const rows = [];
+                let oldIdx = 0;
+                let newIdx = 0;
+                let blockIdx = 0;
+
+                while (oldIdx < oldArr.length || newIdx < newArr.length || blockIdx < blocks.length) {
+                    // 当前差异块
+                    const block = blockIdx < blocks.length ? blocks[blockIdx] : null;
+
+                    if (block && oldIdx === block.oldStart && newIdx === block.newStart) {
+                        // 输出该块的所有行
+                        if (block.type === 'delete') {
+                            for (let i = 0; i < block.lines.length; i++) {
+                                rows.push({
+                                    leftLineNum: oldIdx + i + 1,
+                                    rightLineNum: null,
+                                    leftContent: block.lines[i],
+                                    rightContent: '',
+                                    rowClass: 'diff-row-delete',
+                                    block: block,
+                                    blockIndex: blockIdx
+                                });
+                            }
+                            oldIdx += block.lines.length;
+                        } else if (block.type === 'insert') {
+                            for (let i = 0; i < block.lines.length; i++) {
+                                rows.push({
+                                    leftLineNum: null,
+                                    rightLineNum: newIdx + i + 1,
+                                    leftContent: '',
+                                    rightContent: block.lines[i],
+                                    rowClass: 'diff-row-insert',
+                                    block: block,
+                                    blockIndex: blockIdx
+                                });
+                            }
+                            newIdx += block.lines.length;
+                        }
+                        blockIdx++;
+                    } else if (oldIdx < oldArr.length && newIdx < newArr.length) {
+                        // 等同行
+                        rows.push({
+                            leftLineNum: oldIdx + 1,
+                            rightLineNum: newIdx + 1,
+                            leftContent: oldArr[oldIdx],
+                            rightContent: newArr[newIdx],
+                            rowClass: 'diff-row-equal',
+                            block: null,
+                            blockIndex: null
+                        });
+                        oldIdx++;
+                        newIdx++;
+                    } else if (oldIdx < oldArr.length) {
+                        // 多余的旧行（理论上不会出现，但保留）
+                        rows.push({
+                            leftLineNum: oldIdx + 1,
+                            rightLineNum: null,
+                            leftContent: oldArr[oldIdx],
+                            rightContent: '',
+                            rowClass: 'diff-row-delete',
+                            block: null,
+                            blockIndex: null
+                        });
+                        oldIdx++;
+                    } else if (newIdx < newArr.length) {
+                        // 多余的新行
+                        rows.push({
+                            leftLineNum: null,
+                            rightLineNum: newIdx + 1,
+                            leftContent: '',
+                            rightContent: newArr[newIdx],
+                            rowClass: 'diff-row-insert',
+                            block: null,
+                            blockIndex: null
+                        });
+                        newIdx++;
+                    } else {
+                        break;
+                    }
+                }
+                return rows;
+            });
+
+            // 加载文件差异（初始化）
+            const loadFileDiff = async (file) => {
+                if (!workspaceRoot.value) {
+                    ElMessage.warning('请先输入工作空间根目录');
+                    return;
+                }
                 currentFile.value = file;
+                draftLines.value = [];
+                newLines.value = [];
+                diffBlocks.value = [];
                 try {
-                    const res = await axios.get('/codex/change/file/diff?fileId=' + file.id);
-                    diffText.value = res.data;
+                    const oldText = await fetchOldCode(file.filePath);
+
+                    // 获取新代码：优先从文件列表的 newCode 字段，否则请求详情
+                    let newCodeRaw = file.newCode;
+                    if (newCodeRaw) {
+                        newCodeRaw = fixEscapedString(newCodeRaw);
+                    } else {
+                        newCodeRaw = await fetchNewCode(file.id);
+                    }
+                    const newCode = normalizeLineEndings(newCodeRaw);
+
+                    draftLines.value = oldText.split('\n');   // oldText 已标准化
+                    newLines.value = newCode.split('\n');
+                    diffBlocks.value = computeDiffBlocks(oldText, newCode);
                 } catch (e) {
-                    console.error('加载差异失败', e);
-                    diffText.value = '获取差异失败：' + e.message;
+                    console.error('加载文件差异失败', e);
+                    ElMessage.error('加载差异失败');
                 }
             };
 
-            // 简单的高亮：将 + - 符号用颜色标记
-            const highlightDiff = (text) => {
-                if (!text) return '';
-                return text
-                    .replace(/^\+.*$/gm, '<span style="color:green;">$&</span>')
-                    .replace(/^\-.*$/gm, '<span style="color:red;">$&</span>')
-                    .replace(/^@.*$/gm, '<span style="color:#409eff;">$&</span>');
+            // 处理文件点击
+            const handleFileClick = async (file) => {
+                await loadFileDiff(file);
             };
 
-            // 初始化加载
-            loadBatches();
+            // 接受单个差异块
+            const acceptBlock = (blockIndex) => {
+                const block = diffBlocks.value[blockIndex];
+                if (!block) return;
+                const currentDraft = [...draftLines.value];
+                if (block.type === 'delete') {
+                    currentDraft.splice(block.oldStart, block.oldEnd - block.oldStart);
+                } else if (block.type === 'insert') {
+                    currentDraft.splice(block.oldStart, 0, ...block.lines);
+                }
+                draftLines.value = currentDraft;
+                // 重新计算差异
+                diffBlocks.value = computeDiffBlocks(draftLines.value.join('\n'), newLines.value.join('\n'));
+            };
 
-            return { batches, selectedBatch, files, currentFile, diffText, selectBatch, handleFileClick, highlightDiff };
+            // 全部接受
+            const acceptAll = () => {
+                draftLines.value = [...newLines.value];
+                diffBlocks.value = [];
+            };
+
+            // 全部拒绝（恢复为原始文件内容）
+            const rejectAll = async () => {
+                if (!currentFile.value) return;
+                const oldText = await fetchOldCode(currentFile.value.filePath);
+                draftLines.value = oldText.split('\n');
+                diffBlocks.value = computeDiffBlocks(oldText, newLines.value.join('\n'));
+            };
+
+            // 保存草稿到磁盘
+            const saveDraft = async () => {
+                if (!currentFile.value || !workspaceRoot.value) return;
+                try {
+                    await ElMessageBox.confirm('确定将当前草稿写入磁盘？', '保存更改', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    });
+                    const content = draftLines.value.join('\n');
+                    await axios.post('/codex/change/write/file', {
+                        path: currentFile.value.filePath,
+                        content: content,
+                        workspaceRoot: workspaceRoot.value,
+                        workspaceId: workspaceId.value
+                    });
+                    ElMessage.success('保存成功');
+                    // 刷新差异（此时应为无差异）
+                    await loadFileDiff(currentFile.value);
+                } catch (e) {
+                    if (e !== 'cancel') {
+                        ElMessage.error('保存失败: ' + (e.response?.data || e.message));
+                    }
+                }
+            };
+
+            // 初始化
+            if (workspaceId.value) {
+                searchBatches();
+            }
+
+
+
+            return {
+                // 左侧
+                workspaceRoot,
+                workspaceId,
+                searchDesc,
+                searchStartTime,
+                searchEndTime,
+                batches,
+                selectedBatch,
+                files,
+                searchBatches,
+                selectBatch,
+                // 右侧
+                currentFile,
+                draftLines,
+                newLines,
+                diffBlocks,
+                renderRows,
+                handleFileClick,
+                acceptBlock,
+                acceptAll,
+                rejectAll,
+                saveDraft,
+            };
         }
     }).use(ElementPlus).mount('#app');
 </script>

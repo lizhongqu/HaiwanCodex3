@@ -4,10 +4,17 @@ import com.haiwancodex.www.entity.CodeChangeBatch;
 import com.haiwancodex.www.entity.CodeChangeFile;
 import com.haiwancodex.www.service.CodeChangeService;
 import com.haiwancodex.www.service.DiffService;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/codex/change")
@@ -27,10 +34,71 @@ public class CodeChangeController {
     }
 
     @GetMapping("/batch/list")
-    public List<CodeChangeBatch> listBatches(@RequestParam String workspaceId) {
-        return codeChangeService.listBatchByWorkspaceId(workspaceId);
+    public List<CodeChangeBatch> listBatches(
+            @RequestParam String workspaceId,
+            @RequestParam(required = false) String desc,
+            @RequestParam(required = false) String startTime,
+            @RequestParam(required = false) String endTime) {
+        return codeChangeService.listBatchByConditions(workspaceId, desc, startTime, endTime);
     }
 
+    @GetMapping("/read/file")
+    public String readFile(@RequestParam String path,
+                           @RequestParam String workspaceRoot,
+                           @RequestParam String workspaceId) {
+        Path root = Paths.get(workspaceRoot).normalize();
+        Path filePath = root.resolve(workspaceId).normalize().resolve(path).normalize();
+
+        if (!filePath.startsWith(root)) {
+            throw new RuntimeException("非法路径访问：" + path);
+        }
+
+        try {
+            if (!Files.exists(filePath) || !Files.isRegularFile(filePath)) {
+                return "";
+            }
+            return Files.readString(filePath);
+        } catch (IOException e) {
+            throw new RuntimeException("文件读取失败：" + e.getMessage());
+        }
+    }
+
+    @PostMapping("/write/file")
+    public String writeFile(@RequestBody Map<String, Object> body) {
+        String path = (String) body.get("path");
+        String content = (String) body.get("content");
+        String workspaceRoot = (String) body.get("workspaceRoot");
+        String workspaceId = (String) body.get("workspaceId");
+
+        if (path == null || path.isBlank()) {
+            throw new RuntimeException("文件路径不能为空");
+        }
+        if (workspaceRoot == null || workspaceRoot.isBlank()) {
+            throw new RuntimeException("工作空间根目录不能为空");
+        }
+        if (workspaceId == null || workspaceId.isBlank()) {
+            throw new RuntimeException("工作空间ID不能为空");
+        }
+
+        Path root = Paths.get(workspaceRoot).normalize();
+        Path filePath = root.resolve(workspaceId).normalize().resolve(path).normalize();
+
+        if (!filePath.startsWith(root)) {
+            throw new RuntimeException("非法路径：" + path);
+        }
+
+        try {
+            if (content == null || content.isEmpty()) {
+                Files.deleteIfExists(filePath);
+            } else {
+                Files.createDirectories(filePath.getParent());
+                Files.writeString(filePath, content);
+            }
+            return "ok";
+        } catch (IOException e) {
+            throw new RuntimeException("文件写入失败：" + e.getMessage());
+        }
+    }
     /**
      * 获取指定批次下所有文件代码
      */

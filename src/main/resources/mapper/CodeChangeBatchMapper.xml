@@ -18,6 +18,22 @@
         ORDER BY created_at DESC
     </select>
 
+    <select id="selectByConditions" resultType="com.haiwancodex.www.entity.CodeChangeBatch">
+        SELECT id, workspace_id, message_id, `desc`, prompt_tokens, completion_tokens, total_tokens, created_at
+        FROM code_change_batch
+        WHERE workspace_id = #{workspaceId}
+        <if test="desc != null and desc != ''">
+            AND `desc` LIKE CONCAT('%', #{desc}, '%')
+        </if>
+        <if test="startTime != null and startTime != ''">
+            AND created_at &gt;= #{startTime}
+        </if>
+        <if test="endTime != null and endTime != ''">
+            AND created_at &lt;= #{endTime}
+        </if>
+        ORDER BY created_at DESC
+    </select>
+
     <!-- 根据batchId查单条 -->
     <select id="selectById" resultType="com.haiwancodex.www.entity.CodeChangeBatch">
         SELECT id, workspace_id, message_id, `desc`, prompt_tokens, completion_tokens, total_tokens, created_at

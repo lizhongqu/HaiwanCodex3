@@ -56,6 +56,9 @@ public class CodeChangeService {
         return batchMapper.selectByWorkspaceId(workspaceId);
     }
 
+    public List<CodeChangeBatch> listBatchByConditions(String workspaceId, String desc, String startTime, String endTime) {
+        return batchMapper.selectByConditions(workspaceId, desc, startTime, endTime);
+    }
     /**
      * 根据批次ID查询该批次全部修改文件
      */
